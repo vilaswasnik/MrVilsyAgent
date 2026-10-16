@@ -5,6 +5,8 @@ import { executeTool, describeAction, type ToolContext } from "./lib/agentTools"
 import { Onboarding } from "./components/Onboarding";
 import { loadOnboarding, saveOnboarding, type OnboardingState } from "./lib/onboarding";
 import { estimateTokens } from "./lib/harness";
+import { isRoutineReport } from "./lib/mailLogic";
+import { notifyDesktop } from "./lib/notify";
 import { loadedModels, probeHardware, recommendModels, type HardwareInfo, type LoadedModel } from "./lib/hardware";
 import { fetchModels, streamChat, type ChatMessage, type OllamaModel } from "./lib/ollama";
 import { isJobDue, SCHEDULED_RUN_NOTE } from "./lib/scheduler";
@@ -222,7 +224,10 @@ function App() {
             return "queued";
           },
         });
-        addReport({ jobId: job.id, jobName: job.name, text: text.trim() || "(no output)" });
+        const clean = text.trim() || "(no output)";
+        const silent = isRoutineReport(text);
+        addReport({ jobId: job.id, jobName: job.name, text: silent ? "Nothing new." : clean, silent });
+        if (!silent) notifyDesktop(job.name, clean);
         // Advance to the newest mail actually reported; a failed run leaves the watermark alone.
         const reported = seen as { at: number; id: string } | null;
         if (reported) patchJob({ watermark: reported.at, lastSeenId: reported.id });
@@ -237,21 +242,42 @@ function App() {
     [addReport, toolContext],
   );
 
+  // Runs due jobs one after another. Called on start, on wake/focus and every minute, so runs missed
+  // while the app was closed or the PC slept catch up once; watermarks stop anything being reported twice.
+  const runDueJobs = useCallback(async () => {
+    if (!settingsRef.current.model) return;
+    const now = Date.now();
+    const due = remindersRef.current.filter((reminder) => !reminder.fired && reminder.dueAt <= now);
+    if (due.length) {
+      due.forEach((reminder) => {
+        addReport({ jobId: "reminder", jobName: "Reminder", text: reminder.text });
+        notifyDesktop("Reminder", reminder.text);
+      });
+      setReminders((previous) => previous.map((reminder) => (due.some((item) => item.id === reminder.id) ? { ...reminder, fired: true } : reminder)));
+    }
+    for (const job of jobsRef.current) {
+      if (!isJobDue(job, Date.now()) || runningRef.current || busyRef.current) continue;
+      await runJob(job.id);
+    }
+  }, [addReport, runJob]);
+
   // Checks once a minute while the app is open. Nothing runs when the app is closed.
   useEffect(() => {
-    const tick = () => {
-      const now = Date.now();
-      const due = remindersRef.current.filter((reminder) => !reminder.fired && reminder.dueAt <= now);
-      if (due.length) {
-        due.forEach((reminder) => addReport({ jobId: "reminder", jobName: "Reminder", text: reminder.text }));
-        setReminders((previous) => previous.map((reminder) => (due.some((item) => item.id === reminder.id) ? { ...reminder, fired: true } : reminder)));
-      }
-      const dueJob = jobsRef.current.find((job) => isJobDue(job, now));
-      if (dueJob && settingsRef.current.model) void runJob(dueJob.id);
+    const timer = window.setInterval(() => void runDueJobs(), 60_000);
+    const onWake = () => { if (document.visibilityState === "visible") void runDueJobs(); };
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onWake);
     };
-    const timer = window.setInterval(tick, 60_000);
-    return () => window.clearInterval(timer);
-  }, [addReport, runJob]);
+  }, [runDueJobs]);
+
+  // Catch up as soon as a model is available after launch.
+  useEffect(() => {
+    if (settings.model && connection === "online") void runDueJobs();
+  }, [settings.model, connection, runDueJobs]);
 
   async function approvePending(actionId: string) {
     const action = pending.find((item) => item.id === actionId);

@@ -112,6 +112,8 @@ export interface Report {
   at: number;
   text: string;
   error?: string;
+  // Routine "nothing new" runs are kept but not surfaced.
+  silent?: boolean;
 }
 
 export interface PendingAction {
@@ -149,6 +151,36 @@ export const defaultJobs: Job[] = [
     lastRunAt: 0,
     watermark: 0,
   },
+  {
+    id: "evening-brief",
+    name: "Evening brief",
+    prompt:
+      "Give me an evening wrap-up: what changed in my mail today that needs action, anything I promised that is still open (search my notes), and one thing to prepare for tomorrow. Be brief.",
+    schedule: { kind: "daily", time: "18:00" },
+    enabled: false,
+    lastRunAt: 0,
+    watermark: 0,
+  },
+  {
+    id: "junk-sweep",
+    name: "Junk folder review",
+    prompt:
+      "Use review_junk. Report only mail that looks legitimate (recruiters, interviews, bank or security, appointments) with sender and subject, so I can rescue it myself. List ad senders in one line. You cannot move or block anything.",
+    schedule: { kind: "daily", time: "12:00" },
+    enabled: false,
+    lastRunAt: 0,
+    watermark: 0,
+  },
+  {
+    id: "follow-up-digest",
+    name: "Follow-up digest",
+    prompt:
+      "Use list_follow_ups. Report threads where I owe a reply or I am waiting on someone, oldest first, with age in days. Skip anything under 3 days.",
+    schedule: { kind: "daily", time: "09:00" },
+    enabled: false,
+    lastRunAt: 0,
+    watermark: 0,
+  },
 ];
 
 function loadList<T>(key: string, fallback: T[]): T[] {
@@ -160,7 +192,11 @@ function loadList<T>(key: string, fallback: T[]): T[] {
   }
 }
 
-export const loadJobs = () => loadList<Job>(JOBS_KEY, defaultJobs);
+// Saved jobs are kept as-is (they hold the user's prompts and watermarks); new built-in jobs are added, off by default.
+export const loadJobs = () => {
+  const saved = loadList<Job>(JOBS_KEY, defaultJobs);
+  return [...saved, ...defaultJobs.filter((job) => !saved.some((item) => item.id === job.id))];
+};
 export const saveJobs = (jobs: Job[]) => localStorage.setItem(JOBS_KEY, JSON.stringify(jobs));
 export const loadReports = () => loadList<Report>(REPORTS_KEY, []);
 export const saveReports = (reports: Report[]) => localStorage.setItem(REPORTS_KEY, JSON.stringify(reports.slice(0, 50)));

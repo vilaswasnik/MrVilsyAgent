@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "./ollama";
 import { stripThink } from "./think";
-import { draftReply, getMail, readInbox, searchMail, type MailContext } from "./mail";
+import { draftReply, getMail, readFolder, readInbox, readThreads, searchMail, type MailContext } from "./mail";
+import { categoryLabel, classifyMail, findFollowUps } from "./mailLogic";
 import type { Reminder } from "./storage";
 import { semanticSearch } from "./memory";
 import { listIndexedDocuments, searchDocuments } from "./docs";
@@ -54,6 +55,8 @@ export const READ_TOOLS: ToolDefinition[] = [
   fn("list_skills", "List available skill playbooks."),
   fn("read_skill", "Read a skill playbook by name (for example triage-recruiter-email).", { name: { type: "string" } }, ["name"]),
   fn("list_reminders", "List pending reminders."),
+  fn("list_follow_ups", "List email threads awaiting a reply, in either direction, with their age. Read-only; matched by subject.", { days: { type: "number", description: "How far back to look (3-30, default 14)." } }),
+  fn("review_junk", "Read-only look at recent junk-folder mail to spot legitimate messages. It never moves or blocks anything."),
   fn(
     "search_documents",
     "Search the user's indexed documents (PDF, DOCX, TXT, MD in folders they granted). Returns passages labelled with their source file. Use for any question about the user's documents. Answer only from the returned passages and cite the file name.",
@@ -113,7 +116,7 @@ function safeSkillPath(name: string): string {
 export function describeAction(name: string, args: Args): string {
   switch (name) {
     case "draft_email":
-      return `Save a reply draft for message ${str(args.message_id)}. Nothing is sent.\n\n${stripThink(str(args.body))}`;
+      return `Save a reply draft for message ${str(args.message_id)}. Nothing is sent. Your signature is added once and the original message is quoted underneath automatically.\n\n${stripThink(str(args.body))}`;
     case "save_memory":
       return `Append to ${str(args.scope) === "daily" ? `memory/${todayStamp()}.md` : "MEMORY.md"}:\n\n${stripThink(str(args.fact))}`;
     case "write_file":
@@ -136,7 +139,7 @@ function clip(text: string): string {
 
 const formatMail = (items: { id: string; from: string; subject: string; date: string; snippet: string }[]) =>
   items.length
-    ? items.map((m) => `id=${m.id} | ${m.date} | ${m.from} | ${m.subject}\n  ${m.snippet.slice(0, 160)}`).join("\n")
+    ? items.map((m) => `[${categoryLabel(classifyMail(m))}] id=${m.id} | ${m.date} | ${m.from} | ${m.subject}\n  ${m.snippet.slice(0, 160)}`).join("\n")
     : "No matching mail.";
 
 // Executes a tool. For write tools the caller must already hold user approval.
@@ -198,6 +201,23 @@ export async function executeTool(name: string, args: Args, ctx: ToolContext): P
       return clip(await searchDocuments(ctx.baseUrl, ctx.embedModel, str(args.query)));
     case "list_documents":
       return clip(await listIndexedDocuments());
+    case "list_follow_ups": {
+      const days = Math.min(30, Math.max(3, Number(args.days) || 14));
+      const { inbox, sent } = await readThreads(ctx.mail, days);
+      const items = findFollowUps(inbox, sent);
+      if (!items.length) return `No threads waiting on a reply (checked the last ${days} days, matched by subject).`;
+      return clip(
+        items.map((f) => `${f.kind === "awaiting-your-reply" ? "YOU OWE A REPLY" : "WAITING ON THEM"} | ${f.ageDays}d | ${f.to} | ${f.subject}`).join("\n"),
+      );
+    }
+    case "review_junk": {
+      const junk = await readFolder(ctx.mail, "junk", 14);
+      return clip(
+        junk.length
+          ? `Read-only review. Nothing was moved or blocked. Mail that looks legitimate:\n${formatMail(junk.filter((m) => classifyMail(m) !== "ads"))}\n\nAd senders: ${[...new Set(junk.filter((m) => classifyMail(m) === "ads").map((m) => m.from))].join(", ") || "none"}`
+          : "The junk folder has no recent mail.",
+      );
+    }
     case "list_reminders": {
       const pending = ctx.reminders.list().filter((reminder) => !reminder.fired);
       return pending.length ? pending.map((r) => `${new Date(r.dueAt).toLocaleString()}: ${r.text}`).join("\n") : "No pending reminders.";

@@ -34,8 +34,8 @@ export async function searchOutlook(accessToken: string, query: string): Promise
   return invoke<EmailSummary[]>("outlook_search", { accessToken, query });
 }
 
-export async function recentOutlook(accessToken: string, sinceIso: string): Promise<EmailSummary[]> {
-  return invoke<EmailSummary[]>("outlook_recent", { accessToken, sinceIso });
+export async function recentOutlook(accessToken: string, sinceIso: string, folder: "inbox" | "sent" | "junk" = "inbox"): Promise<EmailSummary[]> {
+  return invoke<EmailSummary[]>("outlook_recent", { accessToken, sinceIso, folder });
 }
 
 export async function getOutlookMessage(accessToken: string, id: string): Promise<EmailDetail> {

@@ -18,4 +18,4 @@ export function describeSchedule(job: Job): string {
 
 // Read-only notice for unattended runs: write tools are queued, never executed.
 export const SCHEDULED_RUN_NOTE =
-  "This is an unattended scheduled run. Use read tools only. If you call a write tool it will be queued for the user's approval and will not execute. Keep the final report short.";
+  "This is an unattended scheduled run. Use read tools only. If you call a write tool it will be queued for the user's approval and will not execute. Keep the final report short. If there is nothing new and actionable for the user, reply with exactly NOTHING_NEW and nothing else.";

@@ -236,13 +236,20 @@ pub async fn outlook_search(access_token: String, query: String) -> Result<Vec<E
 /// Lists inbox messages received at or after `since_iso` (UTC, e.g.
 /// `2026-10-16T14:00:00Z`), newest first. Read-only.
 #[tauri::command]
-pub async fn outlook_recent(access_token: String, since_iso: String) -> Result<Vec<EmailSummary>, String> {
+pub async fn outlook_recent(access_token: String, since_iso: String, folder: Option<String>) -> Result<Vec<EmailSummary>, String> {
     if !since_iso.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | ':' | 'T' | 'Z' | '.')) {
         return Err("Invalid timestamp.".into());
     }
+    // Only these well-known folders can be read; the value is never interpolated as given.
+    let folder = match folder.as_deref().unwrap_or("inbox") {
+        "inbox" => "inbox",
+        "sent" => "sentitems",
+        "junk" => "junkemail",
+        _ => return Err("Unsupported mail folder.".into()),
+    };
     let client = reqwest::Client::new();
     let url = format!(
-        "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter=receivedDateTime%20ge%20{}&$orderby=receivedDateTime%20desc&$top=25&$select=subject,from,receivedDateTime,bodyPreview",
+        "https://graph.microsoft.com/v1.0/me/mailFolders/{folder}/messages?$filter=receivedDateTime%20ge%20{}&$orderby=receivedDateTime%20desc&$top=40&$select=subject,from,receivedDateTime,bodyPreview",
         since_iso
     );
     let response = client

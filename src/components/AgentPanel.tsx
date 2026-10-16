@@ -333,16 +333,25 @@ function Memory() {
 }
 
 function Reports({ reports, onReportsChange }: AgentPanelProps) {
+  const [showSilent, setShowSilent] = useState(false);
+  const surfaced = reports.filter((report) => !report.silent);
+  const quiet = reports.filter((report) => report.silent);
   return (
     <div className="agent-section">
-      {reports.length === 0 && <p className="mail-help">Reports from scheduled jobs and reminders appear here.</p>}
+      {reports.length === 0 && <p className="mail-help">Reports from scheduled jobs and reminders appear here. Routine runs with nothing new stay quiet.</p>}
       {reports.length > 0 && <button className="secondary-button" onClick={() => onReportsChange([])}>Clear reports</button>}
-      {reports.map((report) => (
+      {surfaced.map((report) => (
         <div key={report.id} className="agent-card">
           <div className="agent-card-title">{report.jobName} <small>{new Date(report.at).toLocaleString()}</small></div>
           <pre className={`agent-pre ${report.error ? "agent-error" : ""}`}>{report.error ?? report.text}</pre>
         </div>
       ))}
+      {quiet.length > 0 && (
+        <button className="secondary-button" onClick={() => setShowSilent(!showSilent)}>
+          {showSilent ? "Hide" : "Show"} {quiet.length} quiet run{quiet.length === 1 ? "" : "s"} with nothing new
+        </button>
+      )}
+      {showSilent && quiet.map((report) => <small key={report.id} className="agent-muted">{new Date(report.at).toLocaleString()} · {report.jobName}: nothing new</small>)}
     </div>
   );
 }
