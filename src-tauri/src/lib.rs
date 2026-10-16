@@ -4,11 +4,17 @@ mod gmail;
 mod hardware;
 mod outlook;
 mod secrets;
+mod tabshare;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    tabshare::start();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            tabshare::tab_pairing_token,
+            tabshare::tab_regenerate_token,
+            tabshare::tab_latest,
+            tabshare::tab_clear,
             agent::agent_workspace_info,
             agent::agent_workspace_init,
             agent::agent_list,

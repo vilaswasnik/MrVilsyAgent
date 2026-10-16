@@ -40,7 +40,7 @@ export function callKey(name: string, args: unknown): string {
 }
 
 // Tools whose output comes from outside the agent (mail, documents, files) and must be treated as data.
-const UNTRUSTED = new Set(["read_inbox", "search_mail", "read_email", "search_documents", "compare_documents", "read_file", "read_skill", "search_memory"]);
+const UNTRUSTED = new Set(["read_inbox", "search_mail", "read_email", "search_documents", "compare_documents", "review_current_tab", "read_file", "read_skill", "search_memory"]);
 
 export function wrapToolOutput(name: string, output: string): string {
   if (!UNTRUSTED.has(name)) return output;

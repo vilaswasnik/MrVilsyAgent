@@ -5,6 +5,7 @@ import { categoryLabel, classifyMail, findFollowUps } from "./mailLogic";
 import type { Reminder } from "./storage";
 import { semanticSearch } from "./memory";
 import { compareDocuments, listIndexedDocuments, searchDocuments } from "./docs";
+import { TAB_MAX_AGE_MS, formatTab, latestTab } from "./tabs";
 import {
   TRACKER_HEADER,
   TRACKER_PATH,
@@ -97,6 +98,10 @@ export const READ_TOOLS: ToolDefinition[] = [
     ["company", "role"],
   ),
   fn("list_applications", "List every application in the tracker."),
+  fn(
+    "review_current_tab",
+    "Read the web page the user most recently shared from their browser extension (active tab only, shared on their click). Use it to summarize the page, extract job details, or judge a job posting against the user's saved rules (contract only, no citizenship/clearance-only roles, rate floor). Returns the page text plus the lines that bear on those rules.",
+  ),
 ];
 
 export const WRITE_TOOLS: ToolDefinition[] = [
@@ -321,6 +326,12 @@ export async function executeTool(name: string, args: Args, ctx: ToolContext): P
     case "check_application": {
       const dup = findDuplicate(parseTracker(await readWorkspaceFileOrEmpty(TRACKER_PATH)), str(args.company), str(args.role));
       return dup ? `ALREADY TRACKED: ${dup.date} | ${dup.board} | ${dup.company} | ${dup.role} | ${dup.status}${dup.note ? ` | ${dup.note}` : ""}. Do not apply again.` : "Not in the tracker. No earlier attempt for this role.";
+    }
+    case "review_current_tab": {
+      const tab = await latestTab();
+      if (!tab) return "No page has been shared. Ask the user to open the page and click the MrVilsyAgent extension button (or press its shortcut) to share it.";
+      if (Date.now() - tab.received_ms > TAB_MAX_AGE_MS) return "The last shared page is more than 30 minutes old. Ask the user to share the page again.";
+      return clip(formatTab(tab));
     }
     case "list_applications": {
       const rows = parseTracker(await readWorkspaceFileOrEmpty(TRACKER_PATH));

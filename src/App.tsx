@@ -7,6 +7,7 @@ import { loadOnboarding, saveOnboarding, type OnboardingState } from "./lib/onbo
 import { estimateTokens } from "./lib/harness";
 import { isRoutineReport } from "./lib/mailLogic";
 import { notifyDesktop } from "./lib/notify";
+import { BrowserSettings } from "./components/BrowserSettings";
 import { loadedModels, probeHardware, recommendModels, type HardwareInfo, type LoadedModel } from "./lib/hardware";
 import { fetchModels, streamChat, type ChatMessage, type OllamaModel } from "./lib/ollama";
 import { isJobDue, SCHEDULED_RUN_NOTE } from "./lib/scheduler";
@@ -707,6 +708,7 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
           <select id="fast-model" value={settings.fastModel} onChange={(event) => onChange({ fastModel: event.target.value })}><option value="">Same as main model</option>{models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select>
           <button className="secondary-button" onClick={() => { saveOnboarding({ step: 0, answers: loadOnboarding().answers, status: "pending" }); window.location.reload(); }}>Redo onboarding interview</button>
         </div>
+        <BrowserSettings />
         <div className="settings-section"><label>Agent persona</label><p>Builds the system prompt the agent runs with. Stored on this device only and sent only to your local Ollama.</p>
           <div className="persona-grid">
             <input aria-label="Agent name" value={settings.agentName} onChange={(event) => onChange({ agentName: event.target.value })} placeholder="Agent name" />

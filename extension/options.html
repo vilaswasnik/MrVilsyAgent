@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MrVilsyAgent Tab Share</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; max-width: 520px; margin: 32px auto; color: #2b2622; }
+      input { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; }
+      button { padding: 8px 14px; }
+      small { color: #6b625a; }
+    </style>
+  </head>
+  <body>
+    <h2>MrVilsyAgent Tab Share</h2>
+    <p>Paste the pairing key from the app (Settings → Browser). The extension sends only the page you click it on, and only to this computer.</p>
+    <input id="token" type="password" placeholder="Pairing key" autocomplete="off" />
+    <button id="save">Save</button> <span id="status"></span>
+    <p><small>Shortcut: Ctrl+Shift+Y. Change it at chrome://extensions/shortcuts.</small></p>
+    <script src="options.js"></script>
+  </body>
+</html>
