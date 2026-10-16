@@ -156,8 +156,9 @@ fn extract_docx(path: &Path) -> Result<String, String> {
 fn extract_pdf(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     // Malformed PDFs can make the parser panic; treat that as an extraction failure.
-    std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(&bytes))
+    std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(&bytes))
         .map_err(|_| "This PDF could not be read.".to_string())?
+        .map(|pages| pages.join("\u{c}"))
         .map_err(|e| format!("This PDF could not be read ({e})."))
 }
 

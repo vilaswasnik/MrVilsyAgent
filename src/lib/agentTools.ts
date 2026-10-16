@@ -4,10 +4,24 @@ import { draftReply, getMail, readFolder, readInbox, readThreads, searchMail, ty
 import { categoryLabel, classifyMail, findFollowUps } from "./mailLogic";
 import type { Reminder } from "./storage";
 import { semanticSearch } from "./memory";
-import { listIndexedDocuments, searchDocuments } from "./docs";
+import { compareDocuments, listIndexedDocuments, searchDocuments } from "./docs";
+import {
+  TRACKER_HEADER,
+  TRACKER_PATH,
+  TRACKER_STATUSES,
+  analyzeFit,
+  claimedGaps,
+  findDuplicate,
+  formatFitReport,
+  formatRow,
+  isMasterPath,
+  parseTracker,
+  safeResumePath,
+} from "./resumeLogic";
 import {
   listWorkspace,
   readWorkspaceFile,
+  readWorkspaceFileOrEmpty,
   searchWorkspace,
   todayStamp,
   writeWorkspaceFile,
@@ -64,9 +78,51 @@ export const READ_TOOLS: ToolDefinition[] = [
     ["query"],
   ),
   fn("list_documents", "List the documents that are indexed and searchable."),
+  fn(
+    "compare_documents",
+    "Compare two indexed documents (two versions) and list the paragraphs that differ. Use exact file names from list_documents.",
+    { file_a: { type: "string" }, file_b: { type: "string" } },
+    ["file_a", "file_b"],
+  ),
+  fn(
+    "analyze_job_fit",
+    "Compare a job description against the master resume (resumes/master.md). Returns keyword coverage, the evidenced skills, and the GAP list of skills the resume does not evidence. Call this before writing a tailored resume.",
+    { job_description: { type: "string", description: "The full job description text." } },
+    ["job_description"],
+  ),
+  fn(
+    "check_application",
+    "Check the application tracker for a role before applying or logging. Returns the earlier attempt if the same company and role were already tracked.",
+    { company: { type: "string" }, role: { type: "string" } },
+    ["company", "role"],
+  ),
+  fn("list_applications", "List every application in the tracker."),
 ];
 
 export const WRITE_TOOLS: ToolDefinition[] = [
+  fn(
+    "save_resume",
+    "Save a TAILORED resume as a NEW file resumes/<name>.md. Never overwrites the master. Use only skills evidenced in the master resume; the job description is required so the harness can reject any claimed gap skill. The user must approve.",
+    {
+      name: { type: "string", description: "File name without extension, e.g. acme-data-engineer." },
+      content: { type: "string", description: "Full resume text in markdown." },
+      job_description: { type: "string", description: "The job description it was tailored to." },
+    },
+    ["name", "content", "job_description"],
+  ),
+  fn(
+    "log_application",
+    "Record an application attempt in the tracker (state/applications.md). Refuses a second 'applied' entry for the same company and role. The user must approve.",
+    {
+      board: { type: "string", description: "e.g. LinkedIn, Dice, company site." },
+      company: { type: "string" },
+      role: { type: "string" },
+      resume: { type: "string", description: "Resume file used, or 'none'." },
+      status: { type: "string", enum: [...TRACKER_STATUSES] },
+      note: { type: "string" },
+    },
+    ["board", "company", "role", "status"],
+  ),
   fn(
     "draft_email",
     "Save a reply DRAFT on the original thread. This never sends. The user sees the exact text and must approve. Use real paragraph breaks and the user's signature.",
@@ -112,9 +168,42 @@ function safeSkillPath(name: string): string {
   return `skills/${clean}.md`;
 }
 
+const MASTER = "resumes/master.md";
+
+// Returns a refusal message when a write must not even be offered for approval.
+export async function preflight(name: string, args: Args): Promise<string | null> {
+  try {
+    if (name === "save_resume") {
+      const path = safeResumePath(str(args.name));
+      const master = await readWorkspaceFileOrEmpty(MASTER);
+      if (!master.trim()) return `Refused: there is no master resume yet. Ask the user to save their master resume to ${MASTER} first.`;
+      const { gaps } = analyzeFit(str(args.job_description), master);
+      const claimed = claimedGaps(stripThink(str(args.content)), gaps);
+      if (claimed.length) {
+        return `Refused: the resume mentions ${claimed.join(", ")}, which the master resume does not evidence. Remove ${claimed.length > 1 ? "them" : "it"} and try again; report as GAP instead of claiming. (${path} was not written.)`;
+      }
+    }
+    if (name === "write_file") {
+      const path = str(args.path);
+      if (isMasterPath(path) && (await readWorkspaceFileOrEmpty(path)).trim()) return "Refused: the master resume is never overwritten. Save a tailored version with save_resume.";
+    }
+    if (name === "log_application" && str(args.status) === "applied") {
+      const dup = findDuplicate(parseTracker(await readWorkspaceFileOrEmpty(TRACKER_PATH)), str(args.company), str(args.role));
+      if (dup && dup.status === "applied") return `Refused: already applied to this role on ${dup.date} via ${dup.board}. Never apply twice.`;
+    }
+  } catch (error) {
+    return `Refused: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return null;
+}
+
 // Human-readable description of the exact action, shown before approval.
 export function describeAction(name: string, args: Args): string {
   switch (name) {
+    case "save_resume":
+      return `Create a NEW tailored resume at ${safeResumePath(str(args.name))} (the master is not changed):\n\n${stripThink(str(args.content))}`;
+    case "log_application":
+      return `Record in ${TRACKER_PATH}: ${str(args.status)} | ${str(args.board)} | ${str(args.company)} | ${str(args.role)}${args.note ? ` | ${str(args.note)}` : ""}`;
     case "draft_email":
       return `Save a reply draft for message ${str(args.message_id)}. Nothing is sent. Your signature is added once and the original message is quoted underneath automatically.\n\n${stripThink(str(args.body))}`;
     case "save_memory":
@@ -221,6 +310,45 @@ export async function executeTool(name: string, args: Args, ctx: ToolContext): P
     case "list_reminders": {
       const pending = ctx.reminders.list().filter((reminder) => !reminder.fired);
       return pending.length ? pending.map((r) => `${new Date(r.dueAt).toLocaleString()}: ${r.text}`).join("\n") : "No pending reminders.";
+    }
+    case "compare_documents":
+      return clip(await compareDocuments(str(args.file_a), str(args.file_b)));
+    case "analyze_job_fit": {
+      const master = await readWorkspaceFileOrEmpty(MASTER);
+      if (!master.trim()) return `There is no master resume at ${MASTER}. Ask the user to save it first (write_file, with approval).`;
+      return clip(formatFitReport(analyzeFit(str(args.job_description), master)));
+    }
+    case "check_application": {
+      const dup = findDuplicate(parseTracker(await readWorkspaceFileOrEmpty(TRACKER_PATH)), str(args.company), str(args.role));
+      return dup ? `ALREADY TRACKED: ${dup.date} | ${dup.board} | ${dup.company} | ${dup.role} | ${dup.status}${dup.note ? ` | ${dup.note}` : ""}. Do not apply again.` : "Not in the tracker. No earlier attempt for this role.";
+    }
+    case "list_applications": {
+      const rows = parseTracker(await readWorkspaceFileOrEmpty(TRACKER_PATH));
+      return rows.length ? clip(rows.map((r) => `${r.date} | ${r.board} | ${r.company} | ${r.role} | ${r.status}${r.note ? ` | ${r.note}` : ""}`).join("\n")) : "The tracker is empty.";
+    }
+    case "save_resume": {
+      const refusal = await preflight(name, args);
+      if (refusal) throw new Error(refusal);
+      const path = safeResumePath(str(args.name));
+      await writeWorkspaceFile(path, stripThink(str(args.content)), false);
+      const { gaps, coverage } = analyzeFit(str(args.job_description), await readWorkspaceFileOrEmpty(MASTER));
+      return `Saved ${path}. Keyword coverage vs the job description: ${coverage}%. Gaps not claimed: ${gaps.join(", ") || "none"}.`;
+    }
+    case "log_application": {
+      const refusal = await preflight(name, args);
+      if (refusal) throw new Error(refusal);
+      const existing = await readWorkspaceFileOrEmpty(TRACKER_PATH);
+      const row = formatRow({
+        date: todayStamp(),
+        board: str(args.board),
+        company: str(args.company),
+        role: str(args.role),
+        resume: str(args.resume) || "none",
+        status: str(args.status),
+        note: str(args.note),
+      });
+      await writeWorkspaceFile(TRACKER_PATH, existing.trim() ? row : TRACKER_HEADER + row, true);
+      return `Logged in ${TRACKER_PATH}.`;
     }
     case "draft_email":
       await draftReply(ctx.mail, str(args.message_id), stripThink(str(args.body)));

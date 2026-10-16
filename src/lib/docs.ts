@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { chat, embed } from "./ollama";
 import { stripThink } from "./think";
+import { diffParagraphs, formatDiff } from "./resumeLogic";
 
 export interface DocFile {
   path: string;
@@ -28,6 +29,9 @@ export interface IndexEntry {
   n: number;
   // For summaries: last chunk covered.
   to?: number;
+  // PDF page range this chunk or summary covers.
+  page?: number;
+  pageTo?: number;
   text: string;
   vector: number[];
 }
@@ -76,9 +80,23 @@ export function resetIndexCache(): void {
 
 // Splits on paragraph/sentence boundaries where possible so chunks do not cut mid-sentence.
 export function chunkDocument(text: string, size = CHUNK_CHARS, overlap = OVERLAP_CHARS): string[] {
+  return chunkPaged(text, size, overlap).map((chunk) => chunk.text);
+}
+
+export interface PagedChunk {
+  text: string;
+  // 1-based PDF page range; undefined for formats without pages.
+  page?: number;
+  pageTo?: number;
+}
+
+// PDF text arrives with form feeds between pages; they are used to label chunks and then removed.
+export function chunkPaged(text: string, size = CHUNK_CHARS, overlap = OVERLAP_CHARS): PagedChunk[] {
+  const paged = text.includes("\f");
   const clean = text.replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  if (!clean) return [];
-  const chunks: string[] = [];
+  if (!clean.replace(/\f/g, "").trim()) return [];
+  const chunks: PagedChunk[] = [];
+  const pageAt = (offset: number) => 1 + (clean.slice(0, offset).match(/\f/g)?.length ?? 0);
   let start = 0;
   while (start < clean.length) {
     let end = Math.min(start + size, clean.length);
@@ -87,8 +105,12 @@ export function chunkDocument(text: string, size = CHUNK_CHARS, overlap = OVERLA
       const breakAt = Math.max(window.lastIndexOf("\n\n"), window.lastIndexOf(". "), window.lastIndexOf("\n"));
       if (breakAt > 0) end = start + Math.floor(size * 0.6) + breakAt + 1;
     }
-    const piece = clean.slice(start, end).trim();
-    if (piece) chunks.push(piece);
+    const raw = clean.slice(start, end);
+    const lead = raw.length - raw.replace(/^[\s\f]+/, "").length;
+    const piece = raw.replace(/\f/g, "").trim();
+    if (piece) {
+      chunks.push(paged ? { text: piece, page: pageAt(start + lead), pageTo: pageAt(Math.max(start + lead, end - 1 - (raw.length - raw.replace(/[\s\f]+$/, "").length))) } : { text: piece });
+    }
     if (end >= clean.length) break;
     start = Math.max(end - overlap, start + 1);
   }
@@ -165,7 +187,8 @@ export async function indexDocuments(options: IndexOptions): Promise<{ indexed: 
     onProgress(`(${position + 1}/${files.length}) Reading ${file.name}…`);
     const base: IndexedFile = { path: file.path, name: file.name, size: file.size, modifiedMs: file.modified_ms, indexedAt: Date.now(), chunkCount: 0, entries: [] };
     try {
-      const chunks = chunkDocument(await extractDoc(file.path));
+      const paged = chunkPaged(await extractDoc(file.path));
+      const chunks = paged.map((chunk) => chunk.text);
       if (!chunks.length) {
         index.files[file.path] = { ...base, error: "No extractable text (a scanned or image-only file would need OCR)." };
         failed++;
@@ -173,7 +196,7 @@ export async function indexDocuments(options: IndexOptions): Promise<{ indexed: 
       }
       onProgress(`(${position + 1}/${files.length}) Embedding ${file.name} (${chunks.length} chunks)…`);
       const vectors = await embedAll(baseUrl, embedModel, chunks, "search_document: ", signal);
-      const entries: IndexEntry[] = chunks.map((text, i) => ({ kind: "chunk", n: i + 1, text, vector: vectors[i] }));
+      const entries: IndexEntry[] = chunks.map((text, i) => ({ kind: "chunk", n: i + 1, text, vector: vectors[i], page: paged[i].page, pageTo: paged[i].pageTo }));
 
       if (options.summarizeLong && options.chatModel && chunks.length > SUMMARY_MIN_CHUNKS) {
         const groups: { from: number; to: number; text: string }[] = [];
@@ -185,7 +208,7 @@ export async function indexDocuments(options: IndexOptions): Promise<{ indexed: 
         for (const [g, group] of groups.entries()) {
           onProgress(`(${position + 1}/${files.length}) Summarizing ${file.name}: section ${g + 1}/${groups.length}…`);
           const summary = await summarize(baseUrl, options.chatModel, file.name, group.text, signal, options.numCtx);
-          if (summary) summaries.push({ kind: "summary", n: group.from, to: group.to, text: summary, vector: [] });
+          if (summary) summaries.push({ kind: "summary", n: group.from, to: group.to, text: summary, vector: [], page: paged[group.from - 1].page, pageTo: paged[group.to - 1].pageTo });
         }
         const sv = await embedAll(baseUrl, embedModel, summaries.map((s) => s.text), "search_document: ", signal);
         summaries.forEach((s, i) => (s.vector = sv[i]));
@@ -239,6 +262,8 @@ export interface DocHit {
   kind: "chunk" | "summary";
   n: number;
   to?: number;
+  page?: number;
+  pageTo?: number;
   total: number;
   text: string;
   score: number;
@@ -274,6 +299,8 @@ export function rankEntries(index: DocIndex, query: string, queryVector: number[
         kind: entry.kind,
         n: entry.n,
         to: entry.to,
+        page: entry.page,
+        pageTo: entry.pageTo,
         total: file.chunkCount,
         text: entry.text,
         score: semantic + 0.4 * lexical + (exact ? 0.3 : 0),
@@ -294,7 +321,8 @@ export function formatHits(hits: DocHit[]): string {
   const body = hits
     .map((hit, i) => {
       const where = hit.kind === "summary" ? `summary of chunks ${hit.n}-${hit.to} of ${hit.total}` : `chunk ${hit.n} of ${hit.total}`;
-      return `[${i + 1}] Source: ${hit.file} (${where}, file dated ${new Date(hit.modifiedMs).toISOString().slice(0, 10)})\n${hit.text}`;
+      const pages = hit.page ? `, ${hit.pageTo && hit.pageTo !== hit.page ? `pages ${hit.page}-${hit.pageTo}` : `page ${hit.page}`}` : "";
+      return `[${i + 1}] Source: ${hit.file} (${where}${pages}, file dated ${new Date(hit.modifiedMs).toISOString().slice(0, 10)})\n${hit.text}`;
     })
     .join("\n\n---\n\n");
   return `${USE_RULES}\n\n${body}`;
@@ -315,6 +343,16 @@ export async function searchDocuments(baseUrl: string, embedModel: string | unde
     }
   }
   return formatHits(rankEntries(index, query, vector, limit));
+}
+
+export async function compareDocuments(nameA: string, nameB: string): Promise<string> {
+  const files = Object.values((await loadIndex()).files);
+  const find = (name: string) => files.find((f) => f.name.toLowerCase() === name.toLowerCase()) ?? files.find((f) => f.name.toLowerCase().includes(name.toLowerCase()));
+  const a = find(nameA);
+  const b = find(nameB);
+  if (!a || !b) return `Could not find ${!a ? nameA : nameB} among the indexed documents. Use list_documents for exact names.`;
+  const [ta, tb] = await Promise.all([extractDoc(a.path), extractDoc(b.path)]);
+  return formatDiff(a.name, b.name, diffParagraphs(ta, tb));
 }
 
 export async function listIndexedDocuments(): Promise<string> {

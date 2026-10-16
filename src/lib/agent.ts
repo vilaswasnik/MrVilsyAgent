@@ -1,4 +1,4 @@
-import { ALL_TOOLS, describeAction, executeTool, isWriteTool, summarizeCall, type ToolContext } from "./agentTools";
+import { ALL_TOOLS, describeAction, executeTool, isWriteTool, preflight, summarizeCall, type ToolContext } from "./agentTools";
 import { chat, ToolsUnsupportedError, type ChatMessage } from "./ollama";
 import type { Settings } from "./storage";
 import type { ToolTrace } from "../types";
@@ -153,6 +153,11 @@ export async function runAgent(run: AgentRun): Promise<string> {
 
       try {
         if (isWriteTool(name)) {
+          const refusal = await preflight(name, args);
+          if (refusal) {
+            output = refusal;
+            trace.status = "rejected";
+          } else {
           trace.status = "awaiting-approval";
           run.onTrace({ ...trace });
           const decision = await run.requestApproval(name, args, describeAction(name, args));
@@ -165,6 +170,7 @@ export async function runAgent(run: AgentRun): Promise<string> {
           } else {
             output = "The user rejected this action. Do not retry it; ask what they want instead.";
             trace.status = "rejected";
+          }
           }
         } else {
           output = await executeTool(name, args, ctx);
