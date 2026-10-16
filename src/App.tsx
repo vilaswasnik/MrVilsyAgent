@@ -1,7 +1,11 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AgentPanel } from "./components/AgentPanel";
 import { runAgent, type ApprovalDecision } from "./lib/agent";
-import { executeTool, type ToolContext } from "./lib/agentTools";
+import { executeTool, describeAction, type ToolContext } from "./lib/agentTools";
+import { Onboarding } from "./components/Onboarding";
+import { loadOnboarding, saveOnboarding, type OnboardingState } from "./lib/onboarding";
+import { estimateTokens } from "./lib/harness";
+import { loadedModels, probeHardware, recommendModels, type HardwareInfo, type LoadedModel } from "./lib/hardware";
 import { fetchModels, streamChat, type ChatMessage, type OllamaModel } from "./lib/ollama";
 import { isJobDue, SCHEDULED_RUN_NOTE } from "./lib/scheduler";
 import { EMBED_MODEL_PREFIX } from "./lib/memory";
@@ -86,6 +90,8 @@ function App() {
   const [reminders, setReminders] = useState<Reminder[]>(loadReminders);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [runningJobId, setRunningJobId] = useState("");
+  const [onboarding, setOnboarding] = useState<OnboardingState>(loadOnboarding);
+  const [tokensPerSec, setTokensPerSec] = useState(0);
   const settingsRef = useRef(settings);
   const modelsRef = useRef<OllamaModel[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -399,6 +405,7 @@ function App() {
         signal: controller.signal,
         onToken: appendToken,
         onTrace: upsertTrace,
+        onStats: setTokensPerSec,
         requestApproval: (tool, _args, summary) =>
           new Promise<ApprovalDecision>((resolve) => setApproval({ tool, summary, resolve })),
       });
@@ -430,6 +437,36 @@ function App() {
   function updateSettings(patch: Partial<Settings>) {
     setSettings((previous) => ({ ...previous, ...patch }));
   }
+
+  // Onboarding answers only become approval requests; MEMORY.md changes when the user approves each one.
+  function finishOnboarding(notes: { title: string; fact: string }[], answers: Record<string, string>) {
+    setPending((previous) => [
+      ...previous,
+      ...notes.map((note) => {
+        const args = { fact: note.fact, scope: "durable" };
+        return { id: id(), source: "Onboarding", tool: "save_memory", args, summary: describeAction("save_memory", args), createdAt: Date.now() };
+      }),
+    ]);
+    const patch: Partial<Settings> = {};
+    if (!settings.userName && answers.name?.trim()) patch.userName = answers.name.trim();
+    if (!settings.jobTitle && answers.role?.trim()) patch.jobTitle = answers.role.trim();
+    if (Object.keys(patch).length) updateSettings(patch);
+    const done: OnboardingState = { ...onboarding, answers, status: "done" };
+    saveOnboarding(done);
+    setOnboarding(done);
+    if (notes.length) setShowAgent(true);
+  }
+
+  function skipOnboarding(state: OnboardingState) {
+    const skipped: OnboardingState = { ...state, status: "skipped" };
+    saveOnboarding(skipped);
+    setOnboarding(skipped);
+  }
+
+  const contextTokens = useMemo(() => {
+    const chars = (activeConversation?.messages ?? []).reduce((sum, message) => sum + message.content.length, 0);
+    return estimateTokens(chars) + 1200;
+  }, [activeConversation]);
 
   return (
     <div className="app-shell">
@@ -493,6 +530,9 @@ function App() {
             <div className="composer-dock">
               <Composer ref={inputRef} draft={draft} setDraft={setDraft} busy={busy} ready={ready} attachment={Boolean(attachment)} onSend={send} onStop={stop} onFile={attachFile} />
               <p className="disclaimer">MrVilsyAgent can make mistakes. Verify important information.</p>
+              <p className="context-meter" title="Estimated size of this chat against the context window. Older turns are summarized automatically when it fills.">
+                Context ≈ {contextTokens.toLocaleString()} / {settings.numCtx.toLocaleString()} tokens{tokensPerSec ? ` · ${tokensPerSec} tok/s` : ""}
+              </p>
             </div>
           </section>
         ) : (
@@ -515,6 +555,9 @@ function App() {
         )}
       </main>
 
+      {onboarding.status === "pending" && connection !== "checking" && !showSettings && (
+        <Onboarding initial={onboarding} onFinish={finishOnboarding} onSkip={skipOnboarding} />
+      )}
       {showSettings && <SettingsModal settings={settings} jobs={jobs} models={models} connection={connection} onClose={() => setShowSettings(false)} onChange={updateSettings} onRefresh={refreshModels} />}
       {showMail && <MailPanel settings={settings} onChange={updateSettings} onClose={() => setShowMail(false)} />}
       {showAgent && (
@@ -598,6 +641,14 @@ interface SettingsModalProps {
 
 function SettingsModal({ settings, jobs, models, connection, onClose, onChange, onRefresh }: SettingsModalProps) {
   const [backupMessage, setBackupMessage] = useState("");
+  const [hardware, setHardware] = useState<HardwareInfo | null>(null);
+  const [loaded, setLoaded] = useState<LoadedModel[]>([]);
+  useEffect(() => {
+    probeHardware().then(setHardware).catch(() => setHardware(null));
+    loadedModels(settings.baseUrl).then(setLoaded).catch(() => setLoaded([]));
+  }, [settings.baseUrl]);
+  const recommended = hardware ? recommendModels(hardware.total_ram_gb) : null;
+  const installed = (name: string) => models.some((model) => model.name === name || model.name.startsWith(`${name}:`));
 
   async function exportBackup() {
     try {
@@ -618,6 +669,18 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
         <div className="settings-section"><label htmlFor="ollama-url">Ollama address</label><p>Local server endpoint. Nothing is sent to a cloud service.</p><input id="ollama-url" type="url" value={settings.baseUrl} onChange={(event) => onChange({ baseUrl: event.target.value })} onBlur={onRefresh} placeholder={defaultSettings.baseUrl} /></div>
         <div className="settings-section"><label htmlFor="model-select">Model</label><p>Choose one of the models installed in Ollama.</p><div className="model-select-row"><select id="model-select" value={settings.model} onChange={(event) => onChange({ model: event.target.value })}><option value="">Select a model</option>{models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select><button className="secondary-button" onClick={onRefresh}>Refresh</button></div></div>
         <div className={`settings-status ${connection}`}><span className="status-dot" />{connection === "online" ? `${models.length} local model${models.length === 1 ? "" : "s"} available` : connection === "checking" ? "Checking local Ollama server…" : "Ollama is not reachable"}</div>
+        <div className="settings-section"><label>This computer</label>
+          {hardware ? (
+            <>
+              <p>{hardware.cpu_name || "CPU"} · {hardware.cpu_threads} threads · {hardware.total_ram_gb} GB RAM ({hardware.available_ram_gb} GB free)</p>
+              {recommended && <p>Recommended: <code>{recommended.main}</code> for chat, <code>{recommended.fast}</code> for quick background tasks, <code>{recommended.embed}</code> for memory search. {recommended.note} {[recommended.main, recommended.fast, recommended.embed].filter((name) => !installed(name)).map((name) => `ollama pull ${name}`).join(" · ")}</p>}
+            </>
+          ) : <p>Hardware details are only available in the desktop app.</p>}
+          {loaded.length > 0 && <p>Loaded now: {loaded.map((model) => `${model.name} (${model.percentGpu}% on GPU)`).join(", ")}</p>}
+          <label htmlFor="fast-model">Fast model (summaries, optional)</label>
+          <select id="fast-model" value={settings.fastModel} onChange={(event) => onChange({ fastModel: event.target.value })}><option value="">Same as main model</option>{models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select>
+          <button className="secondary-button" onClick={() => { saveOnboarding({ step: 0, answers: loadOnboarding().answers, status: "pending" }); window.location.reload(); }}>Redo onboarding interview</button>
+        </div>
         <div className="settings-section"><label>Agent persona</label><p>Builds the system prompt the agent runs with. Stored on this device only and sent only to your local Ollama.</p>
           <div className="persona-grid">
             <input aria-label="Agent name" value={settings.agentName} onChange={(event) => onChange({ agentName: event.target.value })} placeholder="Agent name" />

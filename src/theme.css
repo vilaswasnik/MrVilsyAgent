@@ -166,3 +166,4 @@ body{min-width:0;overflow:hidden}
 .tool-trace code{overflow-wrap:anywhere;white-space:pre-wrap}
 .welcome-view{min-height:0;overflow-y:auto}
 @media (max-width:900px){.sidebar{width:220px;flex-basis:220px}.topbar{padding:0 14px}.message-scroll,.composer-dock{padding-left:14px;padding-right:14px}}
+.context-meter{margin:2px 0 0;text-align:center;font-size:11px;color:var(--ink-3)}.onboarding-modal textarea,.onboarding-modal input{width:100%}
