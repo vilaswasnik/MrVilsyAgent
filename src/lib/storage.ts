@@ -20,6 +20,10 @@ export interface Settings {
   fastModel: string;
   // When false, reasoning models (Qwen3, DeepSeek-R1) are asked not to think: faster replies.
   thinking: boolean;
+  // Optional cloud escalation (off by default). The API key is in the Credential Manager, not here.
+  cloudEnabled: boolean;
+  cloudBaseUrl: string;
+  cloudModel: string;
   mailProvider: "gmail" | "outlook";
   gmailClientId: string;
   gmailAccessToken: string;
@@ -46,6 +50,9 @@ export const defaultSettings: Settings = {
   numCtx: 8192,
   fastModel: "",
   thinking: false,
+  cloudEnabled: false,
+  cloudBaseUrl: "https://api.openai.com/v1",
+  cloudModel: "",
   mailProvider: "outlook",
   gmailClientId: "",
   gmailAccessToken: "",

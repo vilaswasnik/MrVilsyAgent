@@ -8,6 +8,8 @@ import { estimateTokens } from "./lib/harness";
 import { isRoutineReport } from "./lib/mailLogic";
 import { notifyDesktop } from "./lib/notify";
 import { BrowserSettings } from "./components/BrowserSettings";
+import { CloudSettings, SelfTest } from "./components/CloudSettings";
+import { askCloud, cloudKeyPresent, escalationPreview } from "./lib/cloud";
 import { loadedModels, probeHardware, recommendModels, type HardwareInfo, type LoadedModel } from "./lib/hardware";
 import { fetchModels, streamChat, type ChatMessage, type OllamaModel } from "./lib/ollama";
 import { isJobDue, SCHEDULED_RUN_NOTE } from "./lib/scheduler";
@@ -83,6 +85,7 @@ function App() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
   const [notice, setNotice] = useState("");
   const [attachment, setAttachment] = useState("");
   const [showMail, setShowMail] = useState(false);
@@ -367,6 +370,30 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    if (settings.cloudEnabled) cloudKeyPresent().then(setCloudReady);
+    else setCloudReady(false);
+  }, [settings.cloudEnabled, showSettings]);
+
+  // Sends only the user's last message, after showing exactly what will leave the computer.
+  async function escalate() {
+    const chat = activeConversation;
+    const question = [...(chat?.messages ?? [])].reverse().find((message) => message.role === "user")?.content.trim();
+    if (!chat || !question || busy) return;
+    if (!window.confirm(escalationPreview(settings, question))) return;
+    setBusy(true);
+    setNotice("");
+    let content: string;
+    try {
+      content = `☁ Cloud answer (${settings.cloudModel}, sent only on your request):\n\n${await askCloud(settings, question)}`;
+    } catch (error) {
+      content = `☁ Cloud escalation failed: ${String(error)}`;
+    }
+    const message: Message = { id: id(), role: "assistant", content, createdAt: Date.now() };
+    setConversations((previous) => previous.map((item) => (item.id === chat.id ? { ...item, updatedAt: Date.now(), messages: [...item.messages, message] } : item)));
+    setBusy(false);
+  }
+
   async function send(event?: FormEvent, suggested?: string) {
     event?.preventDefault();
     const text = (suggested ?? draft).trim();
@@ -555,6 +582,9 @@ function App() {
             </div>
             </div>
             <div className="composer-dock">
+              {cloudReady && !busy && activeConversation?.messages.some((message) => message.role === "user") && (
+                <button className="secondary-button escalate-button" onClick={escalate} title="Ask the configured cloud model about your last message. You see exactly what is sent first.">☁ Escalate this</button>
+              )}
               <Composer ref={inputRef} draft={draft} setDraft={setDraft} busy={busy} ready={ready} attachment={Boolean(attachment)} onSend={send} onStop={stop} onFile={attachFile} />
               <p className="disclaimer">MrVilsyAgent can make mistakes. Verify important information.</p>
               <p className="context-meter" title="Estimated size of this chat against the context window. Older turns are summarized automatically when it fills.">
@@ -709,6 +739,8 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
           <button className="secondary-button" onClick={() => { saveOnboarding({ step: 0, answers: loadOnboarding().answers, status: "pending" }); window.location.reload(); }}>Redo onboarding interview</button>
         </div>
         <BrowserSettings />
+        <CloudSettings settings={settings} onChange={onChange} />
+        <SelfTest />
         <div className="settings-section"><label>Agent persona</label><p>Builds the system prompt the agent runs with. Stored on this device only and sent only to your local Ollama.</p>
           <div className="persona-grid">
             <input aria-label="Agent name" value={settings.agentName} onChange={(event) => onChange({ agentName: event.target.value })} placeholder="Agent name" />

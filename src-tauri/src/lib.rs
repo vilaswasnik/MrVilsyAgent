@@ -1,4 +1,5 @@
 mod agent;
+mod cloud;
 mod docs;
 mod gmail;
 mod hardware;
@@ -11,6 +12,10 @@ pub fn run() {
     tabshare::start();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            cloud::cloud_key_set,
+            cloud::cloud_key_delete,
+            cloud::cloud_key_present,
+            cloud::cloud_ask,
             tabshare::tab_pairing_token,
             tabshare::tab_regenerate_token,
             tabshare::tab_latest,
