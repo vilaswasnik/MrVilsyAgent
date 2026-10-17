@@ -1,4 +1,5 @@
 import type { Conversation } from "../types";
+import type { McpServer } from "./mcp";
 
 const CONVERSATIONS_KEY = "mrvilsyagent.conversations.v1";
 const SETTINGS_KEY = "mrvilsyagent.settings.v1";
@@ -21,6 +22,8 @@ export interface Settings {
   // When false, reasoning models (Qwen3, DeepSeek-R1) are asked not to think: faster replies.
   thinking: boolean;
   theme: "warm" | "light" | "dark";
+  // Local MCP servers (stdio). Off until the user adds one; every tool call still needs approval.
+  mcpServers: McpServer[];
   // Optional cloud escalation (off by default). The API key is in the Credential Manager, not here.
   cloudEnabled: boolean;
   cloudBaseUrl: string;
@@ -52,6 +55,7 @@ export const defaultSettings: Settings = {
   fastModel: "",
   thinking: false,
   theme: "warm",
+  mcpServers: [],
   cloudEnabled: false,
   cloudBaseUrl: "https://api.openai.com/v1",
   cloudModel: "",

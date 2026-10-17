@@ -9,6 +9,7 @@ import { isRoutineReport } from "./lib/mailLogic";
 import { notifyDesktop } from "./lib/notify";
 import { BrowserSettings } from "./components/BrowserSettings";
 import { CloudSettings, SelfTest } from "./components/CloudSettings";
+import { ConnectorsSettings } from "./components/ConnectorsSettings";
 import { markTaskEnd, markTaskStart, readInterruptedTask } from "./lib/verify";
 import { askCloud, cloudKeyPresent, escalationPreview } from "./lib/cloud";
 import { loadedModels, probeHardware, recommendModels, type HardwareInfo, type LoadedModel } from "./lib/hardware";
@@ -793,6 +794,7 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
         </div>
         <BrowserSettings />
         <CloudSettings settings={settings} onChange={onChange} />
+        <ConnectorsSettings settings={settings} onChange={onChange} />
         <SelfTest />
         <div className="settings-section"><label>Agent persona</label><p>Builds the system prompt the agent runs with. Stored on this device only and sent only to your local Ollama.</p>
           <div className="persona-grid">

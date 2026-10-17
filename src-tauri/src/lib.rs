@@ -3,6 +3,7 @@ mod cloud;
 mod docs;
 mod gmail;
 mod hardware;
+mod mcp;
 mod outlook;
 mod secrets;
 mod tabshare;
@@ -35,6 +36,8 @@ pub fn run() {
             secrets::secret_get,
             secrets::secret_delete,
             hardware::hardware_probe,
+            mcp::mcp_discover,
+            mcp::mcp_call,
             docs::docs_folders,
             docs::docs_add_folder,
             docs::docs_remove_folder,

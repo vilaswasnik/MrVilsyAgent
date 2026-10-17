@@ -129,6 +129,16 @@ MrVilsyAgent can optionally connect to **Gmail or Outlook/Microsoft 365** (toggl
 
 Once connected, search your inbox, open a message, give MrVilsyAgent an instruction (e.g. "write a short, polite decline"), and click **Draft reply with MrVilsyAgent** — it uses your already-configured local Ollama model. Saving a draft only ever creates a draft in Gmail/Outlook; nothing is ever sent automatically.
 
+## Connectors and MCP servers — optional
+
+Settings → Connectors lists the built-in connectors (local model, mail, browser tabs, cloud escalation) and lets you add **local MCP servers** that give the agent extra tools.
+
+- A server is a program on this computer (stdio only; remote HTTP servers are not supported). It runs with your user's permissions, so add only servers you trust.
+- Nothing starts automatically. A server starts only when you press **Connect** (after a confirmation showing the exact command) or when you approve one of its tool calls, and it is stopped again right after.
+- Every MCP tool call requires approval and shows the exact arguments. Output is treated as untrusted data, like mail.
+- Server definitions are stored unencrypted in local settings. Do not put passwords or API keys in the arguments.
+- Calls time out after 45 seconds and results are truncated at 20,000 characters.
+
 ## Build
 
 ```powershell

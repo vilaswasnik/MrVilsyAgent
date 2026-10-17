@@ -212,3 +212,10 @@ body{min-width:0;overflow:hidden}
 :root[data-theme="dark"] .attachment-chip{color:#f0a283}
 :root[data-theme="dark"] .avatar,:root[data-theme="dark"] .message-avatar{background:var(--sage-soft);color:var(--sage)}
 :root[data-theme="dark"] .message.assistant .message-avatar{background:transparent}
+
+.connector-list { margin: 0 0 12px; padding-left: 18px; font-size: 13px; }
+.connector-list span { color: var(--ink-3); font-size: 12px; }
+.mcp-server { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 8px 0; }
+.mcp-head { display: flex; justify-content: space-between; align-items: center; }
+.mcp-toggle { font-size: 12px; font-weight: 500; }
+.mcp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }

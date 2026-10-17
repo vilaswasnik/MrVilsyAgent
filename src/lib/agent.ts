@@ -1,4 +1,5 @@
 import { ALL_TOOLS, describeAction, executeTool, isWriteTool, preflight, summarizeCall, type ToolContext } from "./agentTools";
+import { buildMcpTools, callMcp, describeMcpCall, isMcpTool, resolveMcp } from "./mcp";
 import { chat, ToolsUnsupportedError, type ChatMessage } from "./ollama";
 import type { Settings } from "./storage";
 import type { ToolTrace } from "../types";
@@ -97,7 +98,9 @@ export async function runAgent(run: AgentRun): Promise<string> {
   });
   const systemWithNote = compacted.summary ? `${system}\n\nEARLIER IN THIS CONVERSATION (summary of older turns):\n${compacted.summary}` : system;
   const messages: ChatMessage[] = [{ role: "system", content: systemWithNote }, ...trimHistory(compacted.kept, numCtx, systemWithNote.length)];
-  let tools = settings.toolsEnabled ? ALL_TOOLS : undefined;
+  const mcpServers = settings.mcpServers ?? [];
+  const allTools = [...ALL_TOOLS, ...buildMcpTools(mcpServers)];
+  let tools = settings.toolsEnabled ? allTools : undefined;
   let finalText = "";
   const seen = new Set<string>();
   let invalidCalls = 0;
@@ -129,7 +132,7 @@ export async function runAgent(run: AgentRun): Promise<string> {
       const trace: ToolTrace = { id: crypto.randomUUID(), name, summary: summarizeCall(name, args), status: "done" };
       let output: string;
 
-      const problem = validateCall(ALL_TOOLS, name, call.function.arguments);
+      const problem = validateCall(allTools, name, call.function.arguments);
       if (problem) {
         invalidCalls++;
         trace.status = "error";
@@ -155,21 +158,25 @@ export async function runAgent(run: AgentRun): Promise<string> {
       seen.add(key);
 
       try {
-        if (isWriteTool(name)) {
-          const refusal = await preflight(name, args);
+        const mcp = isMcpTool(name) ? resolveMcp(mcpServers, name) : null;
+        if (isMcpTool(name) && !mcp) {
+          output = "Not executed: this MCP tool is no longer enabled.";
+          trace.status = "rejected";
+        } else if (isWriteTool(name) || mcp) {
+          const refusal = mcp ? null : await preflight(name, args);
           if (refusal) {
             output = refusal;
             trace.status = "rejected";
           } else {
           trace.status = "awaiting-approval";
           run.onTrace({ ...trace });
-          const decision = await run.requestApproval(name, args, describeAction(name, args));
+          const decision = await run.requestApproval(name, args, mcp ? describeMcpCall(mcp.server, mcp.tool.name, args) : describeAction(name, args));
           if (decision === "approved") {
             if (wasRecentlyExecuted(key)) {
               output = "Not executed: this exact action was already carried out a moment ago (possibly before a restart). Check the result instead of repeating it.";
               trace.status = "rejected";
             } else {
-              output = await executeTool(name, args, ctx);
+              output = mcp ? await callMcp(mcp.server, mcp.tool.name, args) : await executeTool(name, args, ctx);
               recordExecuted(key);
               trace.status = "done";
             }
