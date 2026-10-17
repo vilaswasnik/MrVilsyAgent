@@ -16,6 +16,12 @@ export const removeDocFolder = (path: string) => invoke<void>("docs_remove_folde
 export const scanDocs = () => invoke<DocFile[]>("docs_scan");
 const extractDoc = (path: string) => invoke<string>("docs_extract", { path });
 
+// Text of a .docx/.pdf the user attached by hand (only the bytes they picked are sent to the extractor).
+export async function extractAttachment(file: File): Promise<string> {
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+  return invoke<string>("docs_extract_attachment", { name: file.name, bytes });
+}
+
 // ~800 tokens per chunk with 100 tokens of overlap (about 4 characters per token).
 export const CHUNK_CHARS = 3200;
 export const OVERLAP_CHARS = 400;

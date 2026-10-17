@@ -142,7 +142,11 @@ fn docx_xml_to_text(xml: &str) -> String {
 
 fn extract_docx(path: &Path) -> Result<String, String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|_| "Not a valid .docx file.".to_string())?;
+    docx_from_reader(file)
+}
+
+fn docx_from_reader<R: Read + std::io::Seek>(reader: R) -> Result<String, String> {
+    let mut archive = zip::ZipArchive::new(reader).map_err(|_| "Not a valid .docx file.".to_string())?;
     let mut xml = String::new();
     archive
         .by_name("word/document.xml")
@@ -155,11 +159,36 @@ fn extract_docx(path: &Path) -> Result<String, String> {
 
 fn extract_pdf(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    pdf_from_bytes(&bytes)
+}
+
+fn pdf_from_bytes(bytes: &[u8]) -> Result<String, String> {
     // Malformed PDFs can make the parser panic; treat that as an extraction failure.
-    std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(&bytes))
+    std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(bytes))
         .map_err(|_| "This PDF could not be read.".to_string())?
         .map(|pages| pages.join("\u{c}"))
         .map_err(|e| format!("This PDF could not be read ({e})."))
+}
+
+// Text of a file the user explicitly attached in the composer. Only the bytes they chose are read.
+#[tauri::command]
+pub async fn docs_extract_attachment(name: String, bytes: Vec<u8>) -> Result<String, String> {
+    if bytes.len() > 20_000_000 {
+        return Err("That file is too large to attach (limit 20 MB).".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let lower = name.to_ascii_lowercase();
+        let text = if lower.ends_with(".docx") {
+            docx_from_reader(std::io::Cursor::new(bytes))?
+        } else if lower.ends_with(".pdf") {
+            pdf_from_bytes(&bytes)?
+        } else {
+            return Err("Only .docx and .pdf are converted; other files are read as text.".to_string());
+        };
+        Ok(text.chars().take(MAX_TEXT_CHARS).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn extract_any(path: &Path) -> Result<String, String> {

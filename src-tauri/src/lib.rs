@@ -43,6 +43,7 @@ pub fn run() {
             docs::docs_remove_folder,
             docs::docs_scan,
             docs::docs_extract,
+            docs::docs_extract_attachment,
             docs::docs_index_load,
             docs::docs_index_save,
             gmail::gmail_connect,

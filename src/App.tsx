@@ -10,6 +10,7 @@ import { notifyDesktop } from "./lib/notify";
 import { BrowserSettings } from "./components/BrowserSettings";
 import { CloudSettings, SelfTest } from "./components/CloudSettings";
 import { ConnectorsSettings } from "./components/ConnectorsSettings";
+import { extractAttachment } from "./lib/docs";
 import { markTaskEnd, markTaskStart, readInterruptedTask } from "./lib/verify";
 import { askCloud, cloudKeyPresent, escalationPreview } from "./lib/cloud";
 import { loadedModels, probeHardware, recommendModels, type HardwareInfo, type LoadedModel } from "./lib/hardware";
@@ -370,16 +371,34 @@ function App() {
 
   async function attachFile(file?: File) {
     if (!file) return;
-    if (file.size > 500_000) {
-      setNotice("For safety, context files must be smaller than 500 KB.");
+    const office = /\.(docx|pdf)$/i.test(file.name);
+    if (file.size > (office ? 20_000_000 : 500_000)) {
+      setNotice(office ? "For safety, documents must be smaller than 20 MB." : "For safety, text files must be smaller than 500 KB.");
       return;
     }
     try {
-      const text = await file.text();
+      let raw: string;
+      if (office) {
+        setNotice(`Reading ${file.name}…`);
+        raw = (await extractAttachment(file)).replace(/\u000c/g, "\n\n").trim();
+        if (!raw) {
+          setNotice(`${file.name} has no readable text (it may be a scanned image; OCR is not supported).`);
+          return;
+        }
+      } else {
+        raw = await file.text();
+        if (/\u0000|\uFFFD{3}/.test(raw.slice(0, 4000))) {
+          setNotice(`${file.name} looks like a binary file, not text. Only text, .docx and .pdf files can be attached.`);
+          return;
+        }
+      }
+      // Roughly 3 characters per token; leave room for the question and the answer.
+      const limit = Math.max(2000, Math.floor(settings.numCtx * 2.2));
+      const text = raw.length > limit ? `${raw.slice(0, limit)}\n…[truncated to fit the context window]` : raw;
       setAttachment(`\n\n[User-attached file: ${file.name}]\n${text}\n[End attached file]`);
-      setNotice(`${file.name} is attached to your next message only.`);
-    } catch {
-      setNotice("That file couldn’t be read as text.");
+      setNotice(raw.length > limit ? `${file.name} is long, so only the first ${limit.toLocaleString()} characters are attached. Raise the context size in Settings to include more.` : `${file.name} is attached to your next message only.`);
+    } catch (error) {
+      setNotice(`Could not read ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -707,7 +726,7 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Compose
       <textarea ref={ref} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={ready ? "Ask anything…" : "Connect Ollama to start chatting…"} rows={1} disabled={!ready} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSend(); } }} />
       <div className="composer-toolbar">
         <div className="composer-tools">
-          <label className="tool-button" title="Attach a text file"><span>＋</span><span className="tool-label">Add context</span><input type="file" accept=".txt,.md,.json,.ts,.tsx,.js,.jsx,.py,.rs,.html,.css,.yml,.yaml,.toml,.xml,.csv" onChange={(event) => { onFile(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>
+          <label className="tool-button" title="Attach a text, Word or PDF file"><span>＋</span><span className="tool-label">Add context</span><input type="file" accept=".txt,.md,.json,.docx,.pdf,.ts,.tsx,.js,.jsx,.py,.rs,.html,.css,.yml,.yaml,.toml,.xml,.csv" onChange={(event) => { onFile(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>
           <span className="composer-separator" />
           <span className="composer-mode"><span className="mode-dot" /> Local chat</span>
         </div>
