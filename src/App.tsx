@@ -768,6 +768,10 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
           {loaded.length > 0 && <p>Loaded now: {loaded.map((model) => `${model.name} (${model.percentGpu}% on GPU)`).join(", ")}</p>}
           <label htmlFor="fast-model">Fast model (summaries, optional)</label>
           <select id="fast-model" value={settings.fastModel} onChange={(event) => onChange({ fastModel: event.target.value })}><option value="">Same as main model</option>{models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select>
+          <button className="secondary-button" onClick={() => {
+            const smallest = models.filter((model) => !/embed/i.test(model.name) && model.size).sort((a, b) => (a.size ?? 0) - (b.size ?? 0))[0];
+            onChange({ thinking: false, numCtx: 4096, ...(smallest ? { fastModel: smallest.name } : {}) });
+          }} title="Fast model = smallest installed chat model, thinking off, context 4096">Fast mode (quicker replies)</button>
           <button className="secondary-button" onClick={() => { saveOnboarding({ step: 0, answers: loadOnboarding().answers, status: "pending" }); window.location.reload(); }}>Redo onboarding interview</button>
         </div>
         <BrowserSettings />
