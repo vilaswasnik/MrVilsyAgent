@@ -88,6 +88,7 @@ function App() {
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [queue, setQueue] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const [notice, setNotice] = useState(() => {
@@ -408,7 +409,13 @@ function App() {
   async function send(event?: FormEvent, suggested?: string) {
     event?.preventDefault();
     const text = (suggested ?? draft).trim();
-    if (!text || !ready || busy) return;
+    if (!text || !ready) return;
+    if (busy) {
+      setQueue((previous) => [...previous, `${text}${attachment}`]);
+      setDraft("");
+      setAttachment("");
+      return;
+    }
 
     const chatId = activeId ?? id();
     const now = Date.now();
@@ -490,7 +497,16 @@ function App() {
     }
   }
 
+  // Runs the next queued message once the current answer has finished.
+  useEffect(() => {
+    if (busy || !ready || approval || queue.length === 0) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    void send(undefined, next);
+  });
+
   function stop() {
+    setQueue([]);
     abortRef.current?.abort();
     approval?.resolve("rejected");
     setApproval(null);
@@ -598,7 +614,7 @@ function App() {
               {cloudReady && !busy && activeConversation?.messages.some((message) => message.role === "user") && (
                 <button className="secondary-button escalate-button" onClick={escalate} title="Ask the configured cloud model about your last message. You see exactly what is sent first.">Escalate this</button>
               )}
-              <Composer ref={inputRef} draft={draft} setDraft={setDraft} busy={busy} ready={ready} attachment={Boolean(attachment)} onSend={send} onStop={stop} onFile={attachFile} />
+              <Composer ref={inputRef} draft={draft} setDraft={setDraft} busy={busy} ready={ready} attachment={Boolean(attachment)} onSend={send} onStop={stop} onFile={attachFile} queued={queue.length} />
               <p className="disclaimer">MrVilsyAgent can make mistakes. Verify important information.</p>
               <p className="context-meter" title="Estimated size of this chat against the context window. Older turns are summarized automatically when it fills.">
                 Context ≈ {contextTokens.toLocaleString()} / {settings.numCtx.toLocaleString()} tokens{tokensPerSec ? ` · ${tokensPerSec} tok/s` : ""}
@@ -617,7 +633,7 @@ function App() {
               <div className="prompt-grid">
                 {greetingPrompts.map((prompt, index) => <button key={prompt} className="prompt-card" onClick={() => send(undefined, prompt)} disabled={!ready}><span className={`prompt-symbol symbol-${index}`}>{["✉", "☺", "☀"][index]}</span><span>{prompt}</span><span className="prompt-arrow">↗</span></button>)}
               </div>
-              <Composer ref={inputRef} draft={draft} setDraft={setDraft} busy={busy} ready={ready} attachment={Boolean(attachment)} onSend={send} onStop={stop} onFile={attachFile} />
+              <Composer ref={inputRef} draft={draft} setDraft={setDraft} busy={busy} ready={ready} attachment={Boolean(attachment)} onSend={send} onStop={stop} onFile={attachFile} queued={queue.length} />
               <p className="disclaimer">Your messages stay local. MrVilsyAgent can make mistakes—verify important information.</p>
               {notice && <div className="notice" role="status">{notice}</div>}
             </div>
@@ -677,23 +693,24 @@ interface ComposerProps {
   onSend: (event?: FormEvent) => void;
   onStop: () => void;
   onFile: (file?: File) => void;
+  queued: number;
 }
 
 const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Composer(
-  { draft, setDraft, busy, ready, attachment, onSend, onStop, onFile },
+  { draft, setDraft, busy, ready, attachment, onSend, onStop, onFile, queued },
   ref,
 ) {
   return (
     <form className="composer" onSubmit={onSend}>
       {attachment && <div className="attachment-chip">▧ File attached to next message <span>· text only</span></div>}
-      <textarea ref={ref} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={ready ? "Ask anything…" : "Connect Ollama to start chatting…"} rows={1} disabled={!ready || busy} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSend(); } }} />
+      <textarea ref={ref} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={ready ? "Ask anything…" : "Connect Ollama to start chatting…"} rows={1} disabled={!ready} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSend(); } }} />
       <div className="composer-toolbar">
         <div className="composer-tools">
           <label className="tool-button" title="Attach a text file"><span>＋</span><span className="tool-label">Add context</span><input type="file" accept=".txt,.md,.json,.ts,.tsx,.js,.jsx,.py,.rs,.html,.css,.yml,.yaml,.toml,.xml,.csv" onChange={(event) => { onFile(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>
           <span className="composer-separator" />
           <span className="composer-mode"><span className="mode-dot" /> Local chat</span>
         </div>
-        <div className="composer-end"><span className="enter-hint">↵ to send</span>{busy ? <button className="send-button" type="button" onClick={onStop} aria-label="Stop">■</button> : <button className="send-button" type="submit" disabled={!ready || !draft.trim()} aria-label="Send message">↑</button>}</div>
+        <div className="composer-end"><span className="enter-hint">{queued ? `${queued} queued · ` : ""}{busy ? "↵ to queue" : "↵ to send"}</span>{busy ? <button className="send-button" type="button" onClick={onStop} aria-label="Stop">■</button> : <button className="send-button" type="submit" disabled={!ready || !draft.trim()} aria-label="Send message">↑</button>}</div>
       </div>
     </form>
   );
