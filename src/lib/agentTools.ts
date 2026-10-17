@@ -99,6 +99,12 @@ export const READ_TOOLS: ToolDefinition[] = [
   ),
   fn("list_applications", "List every application in the tracker."),
   fn(
+    "delegate_task",
+    "Hand a self-contained research question to a fresh, read-only sub-task (for example 'find every email from the recruiter at Acme and summarize the thread'). It uses read tools in its own clean context and returns a short summary. Use it for long lookups so this conversation stays small.",
+    { brief: { type: "string", description: "Complete, self-contained instructions including names, dates and what to report." } },
+    ["brief"],
+  ),
+  fn(
     "review_current_tab",
     "Read the web page the user most recently shared from their browser extension (active tab only, shared on their click). Use it to summarize the page, extract job details, or judge a job posting against the user's saved rules (contract only, no citizenship/clearance-only roles, rate floor). Returns the page text plus the lines that bear on those rules.",
   ),

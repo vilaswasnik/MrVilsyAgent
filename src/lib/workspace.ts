@@ -25,6 +25,19 @@ export const searchWorkspace = (query: string) => invoke<SearchHit[]>("agent_sea
 export const openWorkspaceFolder = () => invoke<void>("agent_open_folder");
 export const backupTarget = () => invoke<string>("agent_backup_target");
 export const runBackup = (destination: string, settingsJson: string) => invoke<string>("agent_backup", { destination, settingsJson });
+
+export interface RestorePreview {
+  file: string;
+  files: number;
+  overwrites: number;
+  has_settings: boolean;
+}
+// Picking a backup changes nothing; applying runs only after the user confirmed the preview.
+export const pickRestore = () => invoke<RestorePreview | null>("agent_restore_pick");
+export const applyRestore = async () => {
+  const [count, settingsJson] = await invoke<[number, string | null]>("agent_restore_apply");
+  return { count, settingsJson };
+};
 // Writes must only run after the user approved the exact action.
 export const writeWorkspaceFile = (path: string, content: string, append: boolean) =>
   invoke<void>("agent_write", { path, content, append });

@@ -29,6 +29,8 @@ pub fn run() {
             agent::agent_open_folder,
             agent::agent_backup_target,
             agent::agent_backup,
+            agent::agent_restore_pick,
+            agent::agent_restore_apply,
             secrets::secret_set,
             secrets::secret_get,
             secrets::secret_delete,

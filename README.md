@@ -47,11 +47,40 @@ MrVilsyAgent can act as a local personal agent. Everything runs on your Ollama m
 - **System prompt.** In **Settings → Agent persona**, set the agent name, your name, timezone, role, priorities, email signature and extra rules. These build the system prompt, which includes your hard rules (draft but never send email, never invent facts about you, irreversible actions need your OK) and the current contents of `MEMORY.md`.
 - **Memory.** Open **Agent → Memory** and click **Set up agent workspace**. This creates `MEMORY.md`, `system_prompt.md` (your editable prompt template), `memory/` (daily notes) and `skills/` (markdown playbooks) in the app's data folder. You can edit them in the panel. The agent gets `MEMORY.md` and the last two daily notes in its prompt (capped in size) and searches the rest with `search_memory`. Search is keyword-based; if you run `ollama pull nomic-embed-text`, it also finds facts by meaning (for example "who looks after my teeth" finds your dentist). Embeddings are computed locally and kept in memory only. The agent cannot read or write anything outside that folder.
 - **Context window.** Settings → Context window sets Ollama's `num_ctx` (default 8192). Without it Ollama may silently truncate long prompts. Older chat turns are dropped automatically to fit. Use the **■** button to stop a reply.
-- **Tools.** With a tool-capable model (for example `qwen2.5:7b`), the agent can call read tools freely: `read_inbox`, `search_mail`, `read_email`, `search_memory`, `list_files`, `read_file`, `list_skills`, `read_skill`, `list_reminders`, `get_time`. Write tools always show the exact action first and wait for your **Approve** or **Reject**: `draft_email` (saves a draft, never sends), `save_memory`, `write_file`, `add_reminder`. Turn tools off in Settings if you prefer plain chat.
+- **Tools.** With a tool-capable model (for example `qwen2.5:7b`), the agent can call read tools freely: `read_inbox`, `search_mail`, `read_email`, `search_memory`, `list_files`, `read_file`, `list_skills`, `read_skill`, `list_reminders`, `get_time`, `search_documents`, `list_documents`, `compare_documents`, `list_follow_ups`, `review_junk`, `analyze_job_fit`, `check_application`, `list_applications`, `review_current_tab`. Write tools always show the exact action first and wait for your **Approve** or **Reject**: `draft_email` (saves a draft, never sends), `save_memory`, `write_file`, `add_reminder`, `save_resume`, `log_application`. Turn tools off in Settings if you prefer plain chat.
 - **Scheduled jobs.** **Agent → Jobs** has an hourly inbox watch and a morning brief, both off by default. They run only while the app is open, use read tools only, and put their reports under **Reports**. If a job proposes a write, it is queued under **Approvals** and nothing runs until you approve it. Reminders fire as entries in **Reports** while the app is open.
 - **Skills.** Add your own `skills/*.md` playbooks; the agent reads one when a task matches.
 
 Limitations: there is no web search tool (it would be a new cloud integration and needs explicit approval first), jobs do not run when the app is closed, workspace files and reports are unencrypted local text, and small local models can make mistakes with multi-step tool use, so review what they propose.
+
+### Harness safeguards
+
+- Every tool call is validated against its schema. One malformed call is fed back to the model; a second in a row stops the task. Repeating the same call twice stops it too, and a task is capped at 25 steps. **Agent → Audit** lists every call (time, tool, arguments, result).
+- Text from mail, documents, files and web pages is wrapped as untrusted data. Instructions inside it are never followed.
+- Long chats are compacted automatically (older turns are summarized, optionally by a smaller **Fast model**). The context meter under the composer shows usage and tokens per second.
+- **Settings → This computer** probes RAM/CPU and recommends a model set. First run starts a skippable onboarding interview; answers become `MEMORY.md` entries that wait in **Approvals**.
+- **Settings → Self-test** runs offline safety checks (no `<think>` leakage, no send tool, malformed calls rejected, outside-workspace reads refused, writes gated, gap skills blocked, duplicates blocked, cloud off by default).
+
+### Mail extras
+
+Messages are labelled INTERVIEW / RECRUITER / BANK-SECURITY / PERSONAL / AD. `list_follow_ups` lists threads awaiting a reply on either side (matched by subject). `review_junk` reads the junk folder without moving anything. Drafts quote the original and add your signature once. Extra jobs (evening brief, junk review, follow-up digest) are off by default; due jobs catch up when the app starts or regains focus, and runs with nothing new stay quiet in Reports.
+
+### Documents and resumes
+
+- **Documents.** In **Agent → Documents**, grant read-only folders, then index PDF, DOCX, TXT and MD files (about 800-token chunks, `nomic-embed-text` embeddings). `search_documents` answers with file and PDF page citations, or says it cannot find the answer. `compare_documents` lists paragraphs that differ between two versions. Re-index PDFs indexed before page labels existed. No OCR for scanned files.
+- **Resumes.** Save your master resume to `resumes/master.md` (it is never overwritten). `analyze_job_fit` reports keyword coverage and a GAP list. `save_resume` creates a new tailored file after approval and is refused if it claims a gap skill. `log_application` and `check_application` keep `state/applications.md` and block a second application to the same role.
+
+### Browser review (read-only, optional)
+
+Load the `extension` folder in Chrome (Developer mode → Load unpacked) and paste the pairing key from **Settings → Browser** into its options. Clicking the extension button (or Ctrl+Shift+Y) sends only the active tab's URL, title and text to the app on `127.0.0.1:17653`. The listener requires the key, accepts only extension origins and the local host name, and keeps only the latest page in memory. `review_current_tab` lets the agent give a FIT / NOT A FIT verdict quoting page lines. Automated job applying is not implemented.
+
+### Cloud escalation (optional, off by default)
+
+**Settings → Cloud escalation** takes your own key (stored in the Credential Manager), an https OpenAI-compatible endpoint and a model. When enabled, **Escalate this** shows the exact text to be sent (only your last message) and sends it only after you confirm. This contacts an external server, so it is the second approved network exception after mail.
+
+### Backup and restore
+
+**Settings → Export backup** writes a zip to Documents. **Restore from backup** shows how many files would be replaced and applies only after you confirm. Entries that try to leave the workspace are rejected; mail tokens and API keys are never part of a backup or touched by a restore.
 
 ## Mail (Gmail or Outlook) integration — optional
 

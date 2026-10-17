@@ -7,6 +7,8 @@ import { stripThink } from "./think";
 import { listWorkspace, readWorkspaceFileOrEmpty, todayStamp } from "./workspace";
 
 import { appendAudit, callKey, compactHistory, MAX_STEPS, validateCall, wrapToolOutput } from "./harness";
+import { isSourceTool, recordExecuted, verificationNote, verifyAnswer, wasRecentlyExecuted } from "./verify";
+import { runSubtask } from "./subtask";
 
 export type ApprovalDecision = "approved" | "rejected" | "queued";
 
@@ -99,6 +101,7 @@ export async function runAgent(run: AgentRun): Promise<string> {
   let finalText = "";
   const seen = new Set<string>();
   let invalidCalls = 0;
+  const sources: string[] = [];
 
   for (let step = 0; step < MAX_STEPS; step++) {
     let result;
@@ -116,7 +119,7 @@ export async function runAgent(run: AgentRun): Promise<string> {
 
     finalText = stripThink(result.content);
     if (result.tokensPerSec) run.onStats?.(result.tokensPerSec);
-    if (!result.toolCalls.length) return finalText;
+    if (!result.toolCalls.length) return finalText + (sources.length ? verificationNote(verifyAnswer(finalText, sources)) : "");
 
     messages.push({ role: "assistant", content: finalText, tool_calls: result.toolCalls });
 
@@ -162,8 +165,14 @@ export async function runAgent(run: AgentRun): Promise<string> {
           run.onTrace({ ...trace });
           const decision = await run.requestApproval(name, args, describeAction(name, args));
           if (decision === "approved") {
-            output = await executeTool(name, args, ctx);
-            trace.status = "done";
+            if (wasRecentlyExecuted(key)) {
+              output = "Not executed: this exact action was already carried out a moment ago (possibly before a restart). Check the result instead of repeating it.";
+              trace.status = "rejected";
+            } else {
+              output = await executeTool(name, args, ctx);
+              recordExecuted(key);
+              trace.status = "done";
+            }
           } else if (decision === "queued") {
             output = "Not executed. The action was queued for the user's approval in the Agent panel.";
             trace.status = "rejected";
@@ -172,8 +181,13 @@ export async function runAgent(run: AgentRun): Promise<string> {
             trace.status = "rejected";
           }
           }
+        } else if (name === "delegate_task") {
+          const child = await runSubtask(settings, ctx, String(args.brief ?? ""), signal);
+          sources.push(...child.sources);
+          output = `Sub-task summary:\n${child.summary}`;
         } else {
           output = await executeTool(name, args, ctx);
+          if (isSourceTool(name)) sources.push(output);
         }
       } catch (error) {
         output = `Error: ${error instanceof Error ? error.message : String(error)}`;

@@ -256,9 +256,125 @@ pub fn agent_backup(app: tauri::AppHandle, destination: String, settings_json: S
     Ok(destination)
 }
 
+static RESTORE_SOURCE: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+const MAX_RESTORE_ENTRY: u64 = 10_000_000;
+
+#[derive(Serialize)]
+pub struct RestorePreview {
+    pub file: String,
+    pub files: usize,
+    pub overwrites: usize,
+    pub has_settings: bool,
+}
+
+// Validates every entry the same way as normal workspace access; nothing is written here.
+fn inspect_backup(root: &Path, zip_path: &Path) -> Result<(Vec<String>, bool), String> {
+    let mut archive = zip::ZipArchive::new(fs::File::open(zip_path).map_err(|e| e.to_string())?).map_err(|_| "That is not a valid backup zip.".to_string())?;
+    let mut names = Vec::new();
+    let mut has_settings = false;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.name().replace('\\', "/");
+        if name == "settings.json" {
+            has_settings = true;
+        } else if let Some(rel) = name.strip_prefix("workspace/") {
+            resolve(root, rel).map_err(|e| format!("Backup rejected ({rel}): {e}"))?;
+            if entry.size() > MAX_RESTORE_ENTRY {
+                return Err(format!("Backup rejected: {rel} is too large."));
+            }
+            names.push(rel.to_string());
+        }
+    }
+    if names.is_empty() {
+        return Err("This zip has no workspace files. Choose a MrVilsyAgent backup.".into());
+    }
+    Ok((names, has_settings))
+}
+
+fn apply_backup(root: &Path, zip_path: &Path) -> Result<(usize, Option<String>), String> {
+    use std::io::Read;
+    let (names, _) = inspect_backup(root, zip_path)?;
+    let mut archive = zip::ZipArchive::new(fs::File::open(zip_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    for rel in &names {
+        let mut entry = archive.by_name(&format!("workspace/{rel}")).map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        entry.by_ref().take(MAX_RESTORE_ENTRY + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        let full = resolve(root, rel)?;
+        if let Some(parent) = full.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(full, bytes).map_err(|e| e.to_string())?;
+    }
+    let settings = archive.by_name("settings.json").ok().and_then(|mut f| {
+        let mut text = String::new();
+        f.read_to_string(&mut text).ok().map(|_| text)
+    });
+    Ok((names.len(), settings))
+}
+
+// Step 1: the user picks a backup; nothing is changed yet.
+#[tauri::command]
+pub async fn agent_restore_pick(app: tauri::AppHandle) -> Result<Option<RestorePreview>, String> {
+    let root = workspace_root(&app)?;
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let Some(handle) = rfd::AsyncFileDialog::new().set_title("Choose a MrVilsyAgent backup").add_filter("Backup", &["zip"]).pick_file().await else {
+        return Ok(None);
+    };
+    let path = handle.path().to_path_buf();
+    let (names, has_settings) = inspect_backup(&root, &path)?;
+    let overwrites = names.iter().filter(|rel| resolve(&root, rel).map(|p| p.exists()).unwrap_or(false)).count();
+    *RESTORE_SOURCE.lock().unwrap() = Some(path.clone());
+    Ok(Some(RestorePreview { file: path.to_string_lossy().into_owned(), files: names.len(), overwrites, has_settings }))
+}
+
+// Step 2: runs only after the user confirmed the preview. Files in the backup replace files
+// with the same name; files that are not in the backup are left alone.
+#[tauri::command]
+pub fn agent_restore_apply(app: tauri::AppHandle) -> Result<(usize, Option<String>), String> {
+    let root = workspace_root(&app)?;
+    let path = RESTORE_SOURCE.lock().unwrap().take().ok_or("Choose a backup first.")?;
+    apply_backup(&root, &path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_restores_into_a_clean_workspace() {
+        let src = temp_root("restore-src");
+        fs::create_dir_all(src.join("state")).unwrap();
+        fs::write(src.join("MEMORY.md"), "my facts").unwrap();
+        fs::write(src.join("state").join("applications.md"), "| tracker |").unwrap();
+        let zip_path = src.parent().unwrap().join(format!("mrvilsy-restore-test-{}.zip", std::process::id()));
+        write_backup(&src, &zip_path, "{\"jobs\":[1]}").unwrap();
+
+        let clean = temp_root("restore-dst");
+        let (count, settings) = apply_backup(&clean, &zip_path).unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(fs::read_to_string(clean.join("MEMORY.md")).unwrap(), "my facts");
+        assert_eq!(fs::read_to_string(clean.join("state").join("applications.md")).unwrap(), "| tracker |");
+        assert_eq!(settings.unwrap(), "{\"jobs\":[1]}");
+        let _ = fs::remove_file(zip_path);
+    }
+
+    #[test]
+    fn restore_rejects_zips_that_escape_the_workspace() {
+        use std::io::Write;
+        let root = temp_root("restore-evil");
+        let zip_path = root.parent().unwrap().join(format!("mrvilsy-evil-test-{}.zip", std::process::id()));
+        let mut zip = zip::ZipWriter::new(fs::File::create(&zip_path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("workspace/../evil.md", options).unwrap();
+        zip.write_all(b"x").unwrap();
+        zip.finish().unwrap();
+        assert!(apply_backup(&root, &zip_path).is_err());
+        assert!(!root.parent().unwrap().join("evil.md").exists());
+        let _ = fs::remove_file(zip_path);
+    }
 
     fn temp_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("mrvilsy-test-{name}-{}", std::process::id()));

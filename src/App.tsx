@@ -9,13 +9,14 @@ import { isRoutineReport } from "./lib/mailLogic";
 import { notifyDesktop } from "./lib/notify";
 import { BrowserSettings } from "./components/BrowserSettings";
 import { CloudSettings, SelfTest } from "./components/CloudSettings";
+import { markTaskEnd, markTaskStart, readInterruptedTask } from "./lib/verify";
 import { askCloud, cloudKeyPresent, escalationPreview } from "./lib/cloud";
 import { loadedModels, probeHardware, recommendModels, type HardwareInfo, type LoadedModel } from "./lib/hardware";
 import { fetchModels, streamChat, type ChatMessage, type OllamaModel } from "./lib/ollama";
 import { isJobDue, SCHEDULED_RUN_NOTE } from "./lib/scheduler";
 import { EMBED_MODEL_PREFIX } from "./lib/memory";
 import { hydrateVaultTokens, saveVaultToken, VAULT_FIELDS, type VaultField } from "./lib/vault";
-import { backupTarget, runBackup } from "./lib/workspace";
+import { applyRestore, backupTarget, pickRestore, runBackup } from "./lib/workspace";
 import {
   connectGmail,
   createGmailDraft,
@@ -86,7 +87,12 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(() => {
+    const left = readInterruptedTask();
+    if (!left) return "";
+    markTaskEnd();
+    return `The app closed while this was running: “${left.label}”. Nothing was repeated automatically. Check Agent → Audit for what already happened, then ask again if needed.`;
+  });
   const [attachment, setAttachment] = useState("");
   const [showMail, setShowMail] = useState(false);
   const [showAgent, setShowAgent] = useState(false);
@@ -209,6 +215,7 @@ function App() {
         setJobs((previous) => previous.map((item) => (item.id === job.id ? { ...item, ...patch } : item)));
       patchJob({ lastRunAt: startedAt });
       let seen: { at: number; id: string } | null = null;
+      markTaskStart(`Scheduled job: ${job.name}`);
       try {
         const text = await runAgent({
           settings: current,
@@ -239,6 +246,7 @@ function App() {
       } catch (error) {
         addReport({ jobId: job.id, jobName: job.name, text: "", error: error instanceof Error ? error.message : "The job failed." });
       } finally {
+        markTaskEnd();
         runningRef.current = false;
         setRunningJobId("");
       }
@@ -451,6 +459,7 @@ function App() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    markTaskStart(text);
     try {
       await runAgent({
         settings,
@@ -471,6 +480,7 @@ function App() {
         setConnection("offline");
       }
     } finally {
+      markTaskEnd();
       abortRef.current = null;
       setBusy(false);
       inputRef.current?.focus();
@@ -718,6 +728,25 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
     }
   }
 
+  async function restoreBackup() {
+    try {
+      const preview = await pickRestore();
+      if (!preview) return;
+      const text = `Restore from:\n${preview.file}\n\n${preview.files} files will be restored; ${preview.overwrites} existing file(s) with the same name will be REPLACED (files not in the backup are kept).${preview.has_settings ? "\nSettings and jobs in the backup will also be applied; your mail sign-in and API keys are kept." : ""}\n\nContinue?`;
+      if (!window.confirm(text)) return;
+      const { count, settingsJson } = await applyRestore();
+      if (settingsJson) {
+        const saved = JSON.parse(settingsJson) as { settings?: Partial<Settings>; jobs?: Job[] };
+        if (saved.settings) saveSettings({ ...settings, ...saved.settings, gmailRefreshToken: settings.gmailRefreshToken, outlookRefreshToken: settings.outlookRefreshToken, gmailAccessToken: settings.gmailAccessToken, outlookAccessToken: settings.outlookAccessToken });
+        if (saved.jobs) saveJobs(saved.jobs);
+      }
+      setBackupMessage(`Restored ${count} files. Reloading…`);
+      setTimeout(() => window.location.reload(), 800);
+    } catch (error) {
+      setBackupMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -759,7 +788,7 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
           </select>
           <p>Larger windows remember more but need more RAM. For meaning-based memory recall, run <code>ollama pull nomic-embed-text</code>; otherwise memory search uses keywords.</p>
         </div>
-        <div className="settings-section"><label>Backup</label><p>Saves a zip of MEMORY.md, daily notes, skills and settings to your Documents folder. You confirm the exact file first. Mail tokens are never included.</p><button className="secondary-button" onClick={() => void exportBackup()}>Export backup…</button>{backupMessage && <p>{backupMessage}</p>}</div>
+        <div className="settings-section"><label>Backup</label><p>Saves a zip of MEMORY.md, daily notes, skills and settings to your Documents folder. You confirm the exact file first. Mail tokens are never included.</p><button className="secondary-button" onClick={() => void exportBackup()}>Export backup…</button> <button className="secondary-button" onClick={() => void restoreBackup()}>Restore from backup…</button>{backupMessage && <p>{backupMessage}</p>}</div>
         <div className="settings-footnote">Conversation history and preferences are stored in this app’s local browser storage. File attachments are sent only to your configured local Ollama server.</div>
         <button className="primary-button" onClick={onClose}>Done</button>
       </section>
