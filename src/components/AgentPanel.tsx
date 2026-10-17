@@ -43,7 +43,7 @@ interface AgentPanelProps {
   onClose: () => void;
 }
 
-type Tab = "approvals" | "jobs" | "memory" | "documents" | "reports" | "audit";
+type Tab = "approvals" | "jobs" | "memory" | "documents" | "resumes" | "skills" | "reports" | "audit";
 
 function AuditLog() {
   const [entries, setEntries] = useState(() => readAudit().reverse());
@@ -77,7 +77,7 @@ export function AgentPanel(props: AgentPanelProps) {
         <button className="icon-button close-button" onClick={props.onClose} aria-label="Close agent panel">×</button>
       </div>
       <div className="agent-tabs" role="tablist">
-        {(["approvals", "jobs", "memory", "documents", "reports", "audit"] as Tab[]).map((name) => (
+        {(["approvals", "jobs", "memory", "documents", "resumes", "skills", "reports", "audit"] as Tab[]).map((name) => (
           <button key={name} role="tab" aria-selected={tab === name} className={tab === name ? "selected" : ""} onClick={() => setTab(name)}>
             {name === "approvals" ? `Approvals${props.pending.length ? ` (${props.pending.length})` : ""}` : name[0].toUpperCase() + name.slice(1)}
           </button>
@@ -87,6 +87,8 @@ export function AgentPanel(props: AgentPanelProps) {
       {tab === "jobs" && <Jobs {...props} />}
       {tab === "memory" && <Memory />}
       {tab === "documents" && <Documents {...props} />}
+      {tab === "resumes" && <FolderEditor folder="resumes" extra="state/applications.md" help="Master and tailored resumes. The agent never overwrites the master; tailored versions are new files created after you approve them. Edits here are saved directly." />}
+      {tab === "skills" && <FolderEditor folder="skills" help="Markdown playbooks the agent reads on request. Edit them to change behavior without code changes." />}
       {tab === "reports" && <Reports {...props} />}
       {tab === "audit" && <AuditLog />}
     </aside>
@@ -325,6 +327,106 @@ function Memory() {
               {saved && <p className="mail-saved">{saved}</p>}
             </>
           )}
+        </>
+      )}
+      {error && <p className="mail-error">{error}</p>}
+    </div>
+  );
+}
+
+function FolderEditor({ folder, help, extra }: { folder: string; help: string; extra?: string }) {
+  const [files, setFiles] = useState<WorkspaceEntry[]>([]);
+  const [selected, setSelected] = useState("");
+  const [content, setContent] = useState("");
+  const [newName, setNewName] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [extraText, setExtraText] = useState("");
+
+  const refresh = useCallback(async () => {
+    try {
+      const all = await listWorkspace();
+      setFiles(all.filter((file) => file.path.replace(/\\/g, "/").startsWith(`${folder}/`)));
+      if (extra) setExtraText(await readWorkspaceFile(extra).catch(() => ""));
+    } catch (err) {
+      setError(String(err));
+    }
+  }, [folder, extra]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function open(path: string) {
+    setError("");
+    setMessage("");
+    try {
+      setContent(await readWorkspaceFile(path));
+      setSelected(path);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function save() {
+    setError("");
+    try {
+      await writeWorkspaceFile(selected, content, false);
+      setMessage(`Saved ${selected}.`);
+      refresh();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function create() {
+    const name = newName.trim();
+    if (!/^[\w.\- ]+\.md$/.test(name)) {
+      setError("Use a plain file name ending in .md (letters, numbers, spaces, - _ .).");
+      return;
+    }
+    const path = `${folder}/${name}`;
+    setError("");
+    try {
+      const existing = await readWorkspaceFile(path).catch(() => "");
+      if (existing) {
+        setError(`${path} already exists; open it from the list instead.`);
+        return;
+      }
+      await writeWorkspaceFile(path, `# ${name.replace(/\.md$/, "")}\n\n`, false);
+      setNewName("");
+      await refresh();
+      open(path);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  return (
+    <div className="agent-section">
+      <p className="mail-help">{help}</p>
+      {extra && (
+        <details>
+          <summary>Application tracker ({extra})</summary>
+          <pre className="agent-muted">{extraText || "No applications logged yet."}</pre>
+        </details>
+      )}
+      <div className="agent-row">
+        <input value={newName} placeholder="new-file.md" onChange={(event) => setNewName(event.target.value)} aria-label={`New ${folder} file name`} />
+        <button className="secondary-button" onClick={create}>Create</button>
+        <button className="secondary-button" onClick={refresh}>Refresh</button>
+      </div>
+      <div className="agent-files">
+        {files.length === 0 && <p className="agent-muted">No files in {folder}/ yet.</p>}
+        {files.map((file) => (
+          <button key={file.path} className={file.path === selected ? "selected" : ""} onClick={() => open(file.path)}>{file.path}</button>
+        ))}
+      </div>
+      {selected && (
+        <>
+          <textarea rows={12} value={content} onChange={(event) => setContent(event.target.value)} aria-label={`Edit ${selected}`} />
+          <button className="primary-button" onClick={save}>Save {selected}</button>
+          {message && <p className="mail-saved">{message}</p>}
         </>
       )}
       {error && <p className="mail-error">{error}</p>}
