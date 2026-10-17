@@ -167,3 +167,29 @@ body{min-width:0;overflow:hidden}
 .welcome-view{min-height:0;overflow-y:auto}
 @media (max-width:900px){.sidebar{width:220px;flex-basis:220px}.topbar{padding:0 14px}.message-scroll,.composer-dock{padding-left:14px;padding-right:14px}}
 .context-meter{margin:2px 0 0;text-align:center;font-size:11px;color:var(--ink-3)}.escalate-button{display:block;margin:0 auto 6px;font-size:12px}.selftest-list{list-style:none;padding:0;margin:6px 0 0;font-size:13px;display:grid;gap:4px}.check-row{display:flex;gap:8px;align-items:center}.check-row input{width:auto}.onboarding-modal textarea,.onboarding-modal input{width:100%}
+
+/* Selectable appearances (Settings ? Appearance). Warm is the default defined above. */
+:root[data-theme="light"]{
+  --bg:#ffffff;--surface:#ffffff;--surface-2:#f2f2f2;--sidebar:#f7f7f7;--ink:#111111;--ink-2:#444444;--ink-3:#777777;
+  --line:#e0e0e0;--accent:#111111;--accent-ink:#ffffff;--accent-soft:#e8e8e8;--muted:#777777;--panel:#f7f7f7;--green:#111111;--green-ink:#ffffff;
+  --shadow:0 2px 6px rgba(0,0,0,.05),0 12px 32px rgba(0,0,0,.08);
+}
+:root[data-theme="dark"]{
+  --bg:#000000;--surface:#0d0d0d;--surface-2:#1a1a1a;--sidebar:#080808;--ink:#f2f2f2;--ink-2:#c4c4c4;--ink-3:#8a8a8a;
+  --line:#2a2a2a;--accent:#f2f2f2;--accent-ink:#000000;--accent-soft:#2a2a2a;--muted:#8a8a8a;--panel:#080808;--green:#f2f2f2;--green-ink:#000000;
+  --shadow:0 2px 6px rgba(0,0,0,.6),0 12px 32px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+:root[data-theme="light"] .new-chat,:root[data-theme="dark"] .new-chat{box-shadow:none}
+:root[data-theme="light"] .new-chat:hover{background:#333}
+:root[data-theme="dark"] .new-chat:hover{background:#d0d0d0}
+:root[data-theme="light"] .new-chat>span,:root[data-theme="light"] .new-chat kbd{color:#fff}
+:root[data-theme="dark"] .new-chat>span,:root[data-theme="dark"] .new-chat kbd{color:#000;background:rgba(0,0,0,.12)}
+:root[data-theme="light"] .brand-mark,:root[data-theme="dark"] .brand-mark{background:var(--ink);box-shadow:none}
+:root[data-theme="light"] .brand-mark span{background:#fff}
+:root[data-theme="dark"] .brand-mark span{background:#000}
+:root[data-theme="light"] *,:root[data-theme="dark"] *{scrollbar-color:var(--line) transparent}
+:root[data-theme="dark"] .send-button,:root[data-theme="dark"] .primary-button,:root[data-theme="dark"] .agent-tabs button.selected{color:#000}
+:root[data-theme="light"] .send-button,:root[data-theme="dark"] .send-button{box-shadow:none}
+:root[data-theme="light"] .composer:focus-within,:root[data-theme="dark"] .composer:focus-within{box-shadow:0 0 0 4px var(--accent-soft),var(--shadow)}
+:root[data-theme="dark"] .connection-banner{background:#1a1a1a;border-color:#333}

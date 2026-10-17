@@ -81,6 +81,9 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string | null>(() => loadConversations()[0]?.id ?? null);
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme;
+  }, [settings.theme]);
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
   const [draft, setDraft] = useState("");
@@ -782,6 +785,12 @@ function SettingsModal({ settings, jobs, models, connection, onClose, onChange, 
           <textarea aria-label="Extra rules" rows={3} value={settings.extraRules} onChange={(event) => onChange({ extraRules: event.target.value })} placeholder="Extra rules (e.g. never reply to appointment-portal messages)" />
           <label className="check-row"><input type="checkbox" checked={settings.toolsEnabled} onChange={(event) => onChange({ toolsEnabled: event.target.checked })} /> Let the agent use tools (read mail and notes freely; every write asks for your approval)</label>
           <label className="check-row"><input type="checkbox" checked={settings.thinking} onChange={(event) => onChange({ thinking: event.target.checked })} /> Let reasoning models (Qwen3, DeepSeek-R1) think first: slower, sometimes better. Their reasoning is never shown or saved.</label>
+          <label htmlFor="theme-select">Appearance</label>
+          <select id="theme-select" value={settings.theme} onChange={(event) => onChange({ theme: event.target.value as Settings["theme"] })}>
+            <option value="warm">Warm (cream)</option>
+            <option value="light">Light (white)</option>
+            <option value="dark">Dark (black)</option>
+          </select>
           <label htmlFor="num-ctx">Context window (tokens)</label>
           <select id="num-ctx" value={settings.numCtx} onChange={(event) => onChange({ numCtx: Number(event.target.value) })}>
             {[4096, 8192, 16384, 32768].map((size) => <option key={size} value={size}>{size.toLocaleString()}{size === 8192 ? " (recommended)" : ""}</option>)}

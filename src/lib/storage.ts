@@ -20,6 +20,7 @@ export interface Settings {
   fastModel: string;
   // When false, reasoning models (Qwen3, DeepSeek-R1) are asked not to think: faster replies.
   thinking: boolean;
+  theme: "warm" | "light" | "dark";
   // Optional cloud escalation (off by default). The API key is in the Credential Manager, not here.
   cloudEnabled: boolean;
   cloudBaseUrl: string;
@@ -50,6 +51,7 @@ export const defaultSettings: Settings = {
   numCtx: 8192,
   fastModel: "",
   thinking: false,
+  theme: "warm",
   cloudEnabled: false,
   cloudBaseUrl: "https://api.openai.com/v1",
   cloudModel: "",
