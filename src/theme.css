@@ -6,7 +6,7 @@
   --muted:#8c8175;--panel:#f4eee3;--green:#d9693f;--green-ink:#fff;
   --shadow:0 2px 6px rgba(80,60,30,.06),0 12px 32px rgba(80,60,30,.08);
   color:var(--ink);background:var(--bg);font-size:15px;
-  font-family:'DM Sans',"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  font-family:'DM Sans Variable','DM Sans',"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
 }
 body{background:var(--bg);color:var(--ink)}
 ::selection{background:var(--accent-soft)}
@@ -18,7 +18,7 @@ body{background:var(--bg);color:var(--ink)}
 .brand-mark{border:0;border-radius:12px;transform:none;width:32px;height:32px;background:linear-gradient(140deg,#f08a5d,#d9693f);box-shadow:0 4px 12px rgba(217,105,63,.35)}
 .brand-mark span{width:9px;height:9px;background:#fff;box-shadow:none}
 .brand-mark.small{width:30px;height:30px;border-radius:50%}
-.brand-name{font:700 19px 'DM Sans',sans-serif;letter-spacing:-.3px;color:var(--ink)}
+.brand-name{font:700 19px 'DM Sans Variable','DM Sans',sans-serif;letter-spacing:-.3px;color:var(--ink)}
 .brand-name>span{color:var(--accent)}
 .icon-button{color:var(--ink-3)}
 .icon-button:hover{color:var(--ink)}
@@ -56,7 +56,7 @@ body{background:var(--bg);color:var(--ink)}
 .welcome-content{width:min(100%,680px)}
 .welcome-spark{width:56px;height:56px;display:grid;place-items:center;border-radius:18px;background:var(--accent-soft);color:var(--accent);font-size:26px;margin-bottom:20px}
 .eyebrow{color:var(--accent);font-size:12px;letter-spacing:1.4px}
-.welcome-content h1{font:600 clamp(36px,5vw,52px)/1.1 'DM Sans',sans-serif;letter-spacing:-1.2px;color:var(--ink);margin:10px 0 12px}
+.welcome-content h1{font:600 clamp(36px,5vw,52px)/1.1 'DM Sans Variable','DM Sans',sans-serif;letter-spacing:-1.2px;color:var(--ink);margin:10px 0 12px}
 .welcome-content h1 em{font-style:normal;color:var(--accent)}
 .welcome-subtitle{color:var(--ink-2);font-size:17px;line-height:1.55;margin:0 0 28px}
 .prompt-grid{grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
@@ -143,7 +143,7 @@ body{min-width:0;overflow:hidden}
 .chat-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .sidebar-bottom{flex:none}
 .main-panel{height:100vh;min-height:0;min-width:0;overflow:hidden}
-.topbar{flex:none;height:60px;padding:0 24px;background:rgba(250,246,239,.88);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);z-index:2}
+.topbar{flex:none;height:60px;padding:0 24px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);z-index:2}
 .topbar-context{min-width:0;flex:1;display:flex;align-items:center;gap:8px;overflow:hidden}
 .topbar-context>span{white-space:nowrap}
 .topbar-context .crumb-active{overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -151,7 +151,7 @@ body{min-width:0;overflow:hidden}
 .conversation-view{padding:0;overflow:hidden;align-items:stretch}
 .message-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:24px 24px 8px;scroll-behavior:smooth}
 .message-list{width:min(100%,780px);margin:0 auto;flex:none;gap:22px;padding:0 0 16px}
-.composer-dock{flex:none;width:100%;padding:8px 24px 14px;background:linear-gradient(to top,var(--bg) 78%,rgba(250,246,239,0))}
+.composer-dock{flex:none;width:100%;padding:8px 24px 14px;background:linear-gradient(to top,var(--bg) 78%,transparent)}
 .composer-dock>.composer,.composer-dock>.disclaimer{width:min(100%,780px);margin-left:auto;margin-right:auto;display:block}
 .composer-dock>.composer{display:block}
 .composer-dock .disclaimer{margin-top:8px;font-size:11.5px;color:var(--ink-3)}

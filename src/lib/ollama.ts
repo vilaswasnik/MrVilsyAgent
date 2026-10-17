@@ -67,7 +67,7 @@ export async function embed(baseUrl: string, model: string, input: string[]): Pr
   const response = await fetch(`${localEndpoint(baseUrl)}/api/embed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input }),
+    body: JSON.stringify({ model, input, keep_alive: "30m" }),
   });
   if (!response.ok) throw new Error(`Embedding failed (${response.status}).`);
   const data = (await response.json()) as { embeddings?: number[][] };
@@ -93,6 +93,7 @@ export async function chat(
         messages,
         stream: true,
         options: { num_ctx: numCtx },
+        keep_alive: "30m",
         ...(withThink ? { think: false } : {}),
         ...(tools?.length ? { tools } : {}),
       }),

@@ -40,6 +40,18 @@ ollama serve
 
 If Ollama exits with `panic: bad origin`, unset `OLLAMA_ORIGINS` and use the default. Keep that PowerShell window open while using the app. Only allow the local origins shown here; do not expose Ollama to public networks.
 
+## What the agent can do
+
+- **Chat and memory:** local chat with a Stop button and context meter, automatic compaction, persistent `MEMORY.md` and daily notes, and a skippable onboarding interview. Memory writes need your approval.
+- **Email (Gmail or Outlook, read and draft only):** read and search the inbox, label messages, write threaded draft replies, and track threads awaiting a reply. Sending is impossible.
+- **Scheduled jobs and reminders:** inbox watch, morning and evening briefs, junk review and follow-up digest. Off by default, run only while the app is open, and catch up on start.
+- **Documents:** index folders you grant, ask questions with file and page citations, summarize, and compare versions.
+- **Resumes and applications:** keyword-coverage and GAP analysis, tailored resumes saved as new files, and an application tracker that blocks duplicate applications. Edit them in **Agent → Resumes** and **Agent → Skills**.
+- **Browser review:** a Chrome extension that shares the active tab only when you invoke it (Ctrl+Shift+Y).
+- **Safety:** approvals for every write, schema-validated tool calls, an audit log, untrusted-content wrapping, `<think>` stripping, claim verification, crash recovery, read-only sub-tasks, backup and restore, and a self-test runner.
+- **Settings:** models and context size, hardware probe, **Appearance** (warm, light or dark), optional cloud escalation.
+- **Not built:** automatic job applying, OCR for scanned PDFs, moving or blocking junk mail.
+
 ## Personal agent (memory, tools, scheduled jobs)
 
 MrVilsyAgent can act as a local personal agent. Everything runs on your Ollama model, and every action that changes something needs your approval.
@@ -56,6 +68,10 @@ Limitations: there is no web search tool (it would be a new cloud integration an
 ### Harness safeguards
 
 - Every tool call is validated against its schema. One malformed call is fed back to the model; a second in a row stops the task. Repeating the same call twice stops it too, and a task is capped at 25 steps. **Agent → Audit** lists every call (time, tool, arguments, result).
+- `delegate_task` runs a read-only sub-task in a fresh context (fast model, at most 8 steps) and returns a short summary; its output is treated as untrusted too.
+- After a task that read mail, files or pages, a deterministic check flags concrete claims (emails, dates, amounts, ids, long numbers) that do not appear in the tool results. It does not re-call the tools or use a second model pass.
+- If the app is closed mid-task, the next start shows a notice and repeats nothing. An identical approved write is refused for 10 minutes, so a retry cannot duplicate it.
+- **Settings → Appearance** switches between warm, light (white) and dark (black).
 - Text from mail, documents, files and web pages is wrapped as untrusted data. Instructions inside it are never followed.
 - Long chats are compacted automatically (older turns are summarized, optionally by a smaller **Fast model**). The context meter under the composer shows usage and tokens per second.
 - **Settings → This computer** probes RAM/CPU and recommends a model set. First run starts a skippable onboarding interview; answers become `MEMORY.md` entries that wait in **Approvals**.
@@ -106,8 +122,8 @@ MrVilsyAgent can optionally connect to **Gmail or Outlook/Microsoft 365** (toggl
 
 *Outlook (personal Microsoft accounts, e.g. live.com/outlook.com):*
 1. Open [entra.microsoft.com](https://entra.microsoft.com) (or portal.azure.com) → **App registrations → New registration**.
-2. Supported account types: **Personal Microsoft accounts only**.
-3. Add a platform: **Mobile and desktop applications**, with redirect URI exactly `http://localhost`.
+2. Supported account types: **Accounts in any organizational directory and personal Microsoft accounts** (or personal only). A single-tenant registration fails with `unauthorized_client`.
+3. Add a platform: **Mobile and desktop applications**, with redirect URI exactly `http://localhost`, and turn on **Allow public client flows**.
 4. Under **API permissions**, add Microsoft Graph delegated permissions `Mail.Read` and `Mail.ReadWrite` (plus `offline_access`).
 5. Copy the **Application (client) ID** and paste it into the Mail panel's "Outlook OAuth Client ID" field, then click **Connect Outlook**.
 
