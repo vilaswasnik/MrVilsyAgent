@@ -4,7 +4,6 @@
 
 Built with Tauri 2, React, TypeScript, and Rust. No cloud model API, analytics, or telemetry is configured by default.
 
-![MrVilsyAgent — streaming chat UI](docs/images/chat.png)
 <!-- TODO(author): add real screenshots/GIF here before publishing — chat UI, Approvals panel, Mail panel. -->
 
 ## What it does
